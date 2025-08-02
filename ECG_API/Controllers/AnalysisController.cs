@@ -32,10 +32,6 @@ namespace ECG_API.Controllers
             
             logger.LogInformation("Обробку завершено. Повертаємо зображення розміром {Size} байт.", finalImageBytes.Length);
 
-            // --- ОСЬ КЛЮЧОВА ЗМІНА ---
-            // Повертаємо файл зображення, а не JSON.
-            // Перший параметр - масив байтів.
-            // Другий - MIME-тип, щоб клієнт знав, що це картинка.
             return File(finalImageBytes, "image/png");
         }
     }

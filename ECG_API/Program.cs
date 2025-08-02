@@ -5,8 +5,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
+builder.Services.AddScoped<IEcgWorkingAreaService, EcgWorkingAreaService>();
 builder.Services.AddScoped<IFeatureExtractionService, FeatureExtractionService>();
-
 builder.Services.AddEndpointsApiExplorer(); 
 
 builder.Services.AddSwaggerGen();

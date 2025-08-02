@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ECG_API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+74262162752980da00cd9bfa8bc039008e272ea2")]
 [assembly: System.Reflection.AssemblyProductAttribute("ECG_API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ECG_API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
