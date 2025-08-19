@@ -7,6 +7,9 @@ builder.Services.AddControllers();
 
 builder.Services.AddScoped<IEcgWorkingAreaService, EcgWorkingAreaService>();
 builder.Services.AddScoped<IFeatureExtractionService, FeatureExtractionService>();
+builder.Services.AddScoped<IEcgStripSplitterService, EcgStripSplitterService>();
+builder.Services.AddScoped<IEcgGridGeneratorService, EcgGridGeneratorService>();
+builder.Services.AddScoped<ICalibrationPulseRemoverService, CalibrationPulseRemoverService>();
 builder.Services.AddEndpointsApiExplorer(); 
 
 builder.Services.AddSwaggerGen();
