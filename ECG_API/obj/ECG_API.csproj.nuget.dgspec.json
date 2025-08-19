@@ -55,11 +55,11 @@
               "target": "Package",
               "version": "[9.0.7, )"
             },
-            "OpenCvSharp4": {
+            "OpenCvSharp4.Extensions": {
               "target": "Package",
               "version": "[4.11.0.20250507, )"
             },
-            "OpenCvSharp4.runtime.win": {
+            "OpenCvSharp4.Windows": {
               "target": "Package",
               "version": "[4.11.0.20250507, )"
             },
@@ -74,6 +74,10 @@
             "Swashbuckle.AspNetCore": {
               "target": "Package",
               "version": "[9.0.3, )"
+            },
+            "System.Drawing.Common": {
+              "target": "Package",
+              "version": "[9.0.8, )"
             }
           },
           "imports": [

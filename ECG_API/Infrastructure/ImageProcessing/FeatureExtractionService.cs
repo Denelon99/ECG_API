@@ -7,60 +7,51 @@ namespace ECG_API.Infrastructure.ImageProcessing
 {
     public class FeatureExtractionService(
         ILogger<FeatureExtractionService> logger,
-        IEcgWorkingAreaService workingAreaService) : IFeatureExtractionService
+        IEcgWorkingAreaService workingAreaService,
+        IEcgStripSplitterService stripSplitterService,
+        ICalibrationPulseRemoverService pulseRemoverService) : IFeatureExtractionService
     {
-        
-        private static readonly Color AreaAboveColor = Color.FromRgb(66, 135, 245); // Синій
-        private static readonly Color AreaBelowColor = Color.FromRgb(245, 66, 66); // Червоний
 
         public async Task<(float[]? features, byte[]? finalImage)> ProcessEcgImageAsync(Stream imageStream)
         {
             try
             {
-                // Зберігаємо позицію стріму на випадок потреби повторного читання
-                var originalPosition = imageStream.Position;
-
                 using var originalImage = await Image.LoadAsync<Rgba32>(imageStream);
-                logger.LogInformation($"Завантажено зображення розміром: {originalImage.Width}x{originalImage.Height}");
-
+               
+                // Пошук та обрізка робочої області 
                 var workingArea = workingAreaService.FindWorkingArea(originalImage);
-
-                // Перевіряємо чи знайдено валідну робочу область
                 if (workingArea.Width <= 0 || workingArea.Height <= 0)
                 {
                     logger.LogWarning("Робочу область не знайдено, використовуємо все зображення");
                     workingArea = new Rectangle(0, 0, originalImage.Width, originalImage.Height);
                 }
-
-                // Додаткова перевірка на розумність розміру робочої області
-                var areaPercentage = (double)(workingArea.Width * workingArea.Height) /
-                                     (originalImage.Width * originalImage.Height);
-                if (areaPercentage < 0.1) // Менше 10% від загального зображення
-                {
-                    logger.LogWarning(
-                        $"Робоча область занадто мала ({areaPercentage:P1}), використовуємо все зображення");
-                    workingArea = new Rectangle(0, 0, originalImage.Width, originalImage.Height);
-                }
-
-                logger.LogInformation(
-                    "Використовується робоча область: {WorkingArea} ({Percentage:P1} від загального зображення)",
-                    workingArea, areaPercentage);
-
-                // Обрізаємо зображення
                 using var croppedImage = CropImageSafely(originalImage, workingArea);
-
-                // Конвертуємо в байти
+                
+                // Видалення калібрувального імпульсу 
+                using var imageWithoutPulse = pulseRemoverService.RemovePulse(croppedImage);
+                
+                //Розділення на горизонтальні смуги 
+                var strips = stripSplitterService.SplitIntoStrips(imageWithoutPulse, 4);
+                if (strips.Count == 0)
+                {
+                    logger.LogError("Не вдалося розділити зображення на смуги.");
+                    return (null, null);
+                }
+                //Повертаємо першу смугу для візуалізації 
+                using var firstStrip = strips[0];
+                
                 using var memoryStream = new MemoryStream();
-                await croppedImage.SaveAsPngAsync(memoryStream);
-                byte[] croppedImageBytes = memoryStream.ToArray();
-
-                logger.LogInformation(
-                    $"Результуюче зображення: {croppedImage.Width}x{croppedImage.Height}, {croppedImageBytes.Length} байт");
-
-                // Поки що повертаємо порожні features
-                var dummyFeatures = Array.Empty<float>();
-
-                return (dummyFeatures, croppedImageBytes);
+                await imageWithoutPulse.SaveAsPngAsync(memoryStream);
+                byte[]? imageWithoutPulseBytes = memoryStream.ToArray();
+                return (Array.Empty<float>(), imageWithoutPulseBytes);
+                /*byte[] firstStripBytes  = memoryStream.ToArray();
+                
+                for (int i = 1; i < strips.Count; i++)
+                {
+                    strips[i].Dispose();
+                }
+                
+                return (Array.Empty<float>(), firstStripBytes);*/
             }
             catch (Exception ex)
             {

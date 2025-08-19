@@ -9,11 +9,12 @@
       "ECG_API/1.0.0": {
         "dependencies": {
           "Microsoft.AspNetCore.OpenApi": "9.0.7",
-          "OpenCvSharp4": "4.11.0.20250507",
-          "OpenCvSharp4.runtime.win": "4.11.0.20250507",
+          "OpenCvSharp4.Extensions": "4.11.0.20250507",
+          "OpenCvSharp4.Windows": "4.11.0.20250507",
           "SixLabors.ImageSharp": "3.1.10",
           "SixLabors.ImageSharp.Drawing": "2.1.6",
-          "Swashbuckle.AspNetCore": "9.0.3"
+          "Swashbuckle.AspNetCore": "9.0.3",
+          "System.Drawing.Common": "9.0.8"
         },
         "runtime": {
           "ECG_API.dll": {}
@@ -39,12 +40,40 @@
           }
         }
       },
+      "Microsoft.Win32.SystemEvents/9.0.8": {
+        "runtime": {
+          "lib/net9.0/Microsoft.Win32.SystemEvents.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.825.36511"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net9.0/Microsoft.Win32.SystemEvents.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.825.36511"
+          }
+        }
+      },
       "OpenCvSharp4/4.11.0.20250507": {
         "dependencies": {
           "System.Memory": "4.6.3"
         },
         "runtime": {
           "lib/net6.0/OpenCvSharp.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "OpenCvSharp4.Extensions/4.11.0.20250507": {
+        "dependencies": {
+          "OpenCvSharp4": "4.11.0.20250507",
+          "System.Drawing.Common": "9.0.8"
+        },
+        "runtime": {
+          "lib/net6.0/OpenCvSharp.Extensions.dll": {
             "assemblyVersion": "1.0.0.0",
             "fileVersion": "1.0.0.0"
           }
@@ -72,6 +101,12 @@
             "assetType": "native",
             "fileVersion": "2024.12.0.0"
           }
+        }
+      },
+      "OpenCvSharp4.Windows/4.11.0.20250507": {
+        "dependencies": {
+          "OpenCvSharp4": "4.11.0.20250507",
+          "OpenCvSharp4.runtime.win": "4.11.0.20250507"
         }
       },
       "SixLabors.Fonts/2.1.3": {
@@ -140,6 +175,21 @@
           }
         }
       },
+      "System.Drawing.Common/9.0.8": {
+        "dependencies": {
+          "Microsoft.Win32.SystemEvents": "9.0.8"
+        },
+        "runtime": {
+          "lib/net9.0/System.Drawing.Common.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.825.36801"
+          },
+          "lib/net9.0/System.Private.Windows.Core.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.825.36801"
+          }
+        }
+      },
       "System.Memory/4.6.3": {}
     }
   },
@@ -170,6 +220,13 @@
       "path": "microsoft.openapi/1.6.23",
       "hashPath": "microsoft.openapi.1.6.23.nupkg.sha512"
     },
+    "Microsoft.Win32.SystemEvents/9.0.8": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-64oQBN8I8EOcyHGNt6+rlcqm4tlcKfqOpswtBCJZnpzBQ15L6IFKqjnbjbOWBpG9wKq9A/aC2LFSmSqplbwTYA==",
+      "path": "microsoft.win32.systemevents/9.0.8",
+      "hashPath": "microsoft.win32.systemevents.9.0.8.nupkg.sha512"
+    },
     "OpenCvSharp4/4.11.0.20250507": {
       "type": "package",
       "serviceable": true,
@@ -177,12 +234,26 @@
       "path": "opencvsharp4/4.11.0.20250507",
       "hashPath": "opencvsharp4.4.11.0.20250507.nupkg.sha512"
     },
+    "OpenCvSharp4.Extensions/4.11.0.20250507": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-xVA5xpgvI6cWBx+Zf+kL7NIVc8dpT6ScgHq3nV5tlMBpoG2aClKaLSFHtlPAE99ASfqNieaDzeOduJTe4V1aGw==",
+      "path": "opencvsharp4.extensions/4.11.0.20250507",
+      "hashPath": "opencvsharp4.extensions.4.11.0.20250507.nupkg.sha512"
+    },
     "OpenCvSharp4.runtime.win/4.11.0.20250507": {
       "type": "package",
       "serviceable": true,
       "sha512": "sha512-3PxMXyzR+pkL9UOx2PiBjZm+/iyCIu5D6OlA1sq9MH7oWrfvVnCXJlUYhIJv67F7SLUwUuGwXDIQBfdsL/54lg==",
       "path": "opencvsharp4.runtime.win/4.11.0.20250507",
       "hashPath": "opencvsharp4.runtime.win.4.11.0.20250507.nupkg.sha512"
+    },
+    "OpenCvSharp4.Windows/4.11.0.20250507": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Vwbvv8mkK9L8kbaTpQyiguuVj7+2wbXVM2FJkJjsfEIjXjSvzt5mWX/yfYJA6aPH0Mn89FwlBtHo84Cl143C7g==",
+      "path": "opencvsharp4.windows/4.11.0.20250507",
+      "hashPath": "opencvsharp4.windows.4.11.0.20250507.nupkg.sha512"
     },
     "SixLabors.Fonts/2.1.3": {
       "type": "package",
@@ -232,6 +303,13 @@
       "sha512": "sha512-DgJKJASz5OAygeKv2+N0FCZVhQylESqLXrtrRAqIT0vKpX7t5ImJ1FL6+6OqxKiamGkL0jchRXR8OgpMSsMh8w==",
       "path": "swashbuckle.aspnetcore.swaggerui/9.0.3",
       "hashPath": "swashbuckle.aspnetcore.swaggerui.9.0.3.nupkg.sha512"
+    },
+    "System.Drawing.Common/9.0.8": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ineIJmF+yuBEHGft9R153J9kmBFaeEfFL5Put5nzENneRcGGPUb3MvM8zrZ5pERQ0jPPSE3Wqw/clXvOq2F/Kw==",
+      "path": "system.drawing.common/9.0.8",
+      "hashPath": "system.drawing.common.9.0.8.nupkg.sha512"
     },
     "System.Memory/4.6.3": {
       "type": "package",
