@@ -9,7 +9,9 @@ namespace ECG_API.Infrastructure.ImageProcessing
         ILogger<FeatureExtractionService> logger,
         IEcgWorkingAreaService workingAreaService,
         IEcgStripSplitterService stripSplitterService,
-        ICalibrationPulseRemoverService pulseRemoverService) : IFeatureExtractionService
+        ICalibrationPulseRemoverService pulseRemoverService,
+        IEcgSignalIsolationService signalIsolationService,
+        IImageStorageService imageStorageService) : IFeatureExtractionService
     {
 
         public async Task<(float[]? features, byte[]? finalImage)> ProcessEcgImageAsync(Stream imageStream)
@@ -25,10 +27,17 @@ namespace ECG_API.Infrastructure.ImageProcessing
                     logger.LogWarning("Робочу область не знайдено, використовуємо все зображення");
                     workingArea = new Rectangle(0, 0, originalImage.Width, originalImage.Height);
                 }
+                
                 using var croppedImage = CropImageSafely(originalImage, workingArea);
                 
+                using var signalOnlyTransparent = signalIsolationService.IsolateSignal(croppedImage);
+
+                // --- Крок 2.1: Накладання сигналу на білий фон ---
+                using var signalWithBackground = new Image<Rgba32>(signalOnlyTransparent.Width, signalOnlyTransparent.Height, Color.White);
+                signalWithBackground.Mutate(ctx => ctx.DrawImage(signalOnlyTransparent, 1f)); 
+                
                 // Видалення калібрувального імпульсу 
-                using var imageWithoutPulse = pulseRemoverService.RemovePulse(croppedImage);
+                using var imageWithoutPulse = pulseRemoverService.RemovePulse(signalWithBackground);
                 
                 //Розділення на горизонтальні смуги 
                 var strips = stripSplitterService.SplitIntoStrips(imageWithoutPulse, 4);
@@ -40,18 +49,12 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 //Повертаємо першу смугу для візуалізації 
                 using var firstStrip = strips[0];
                 
+                
                 using var memoryStream = new MemoryStream();
                 await imageWithoutPulse.SaveAsPngAsync(memoryStream);
-                byte[]? imageWithoutPulseBytes = memoryStream.ToArray();
-                return (Array.Empty<float>(), imageWithoutPulseBytes);
-                /*byte[] firstStripBytes  = memoryStream.ToArray();
+                byte[]? imageWithoutPulseByte = memoryStream.ToArray();
                 
-                for (int i = 1; i < strips.Count; i++)
-                {
-                    strips[i].Dispose();
-                }
-                
-                return (Array.Empty<float>(), firstStripBytes);*/
+                return (Array.Empty<float>(), imageWithoutPulseByte);
             }
             catch (Exception ex)
             {

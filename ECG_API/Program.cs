@@ -10,6 +10,8 @@ builder.Services.AddScoped<IFeatureExtractionService, FeatureExtractionService>(
 builder.Services.AddScoped<IEcgStripSplitterService, EcgStripSplitterService>();
 builder.Services.AddScoped<IEcgGridGeneratorService, EcgGridGeneratorService>();
 builder.Services.AddScoped<ICalibrationPulseRemoverService, CalibrationPulseRemoverService>();
+builder.Services.AddScoped<IImageStorageService, ImageStorageService>();
+builder.Services.AddScoped<IEcgSignalIsolationService, EcgSignalIsolationService>();
 builder.Services.AddEndpointsApiExplorer(); 
 
 builder.Services.AddSwaggerGen();
