@@ -3,119 +3,123 @@ using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using Rect = OpenCvSharp.Rect;
 using ImageSharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
 using SystemBitmap = System.Drawing.Bitmap;
-using Point = OpenCvSharp.Point;
-using Rect = OpenCvSharp.Rect;
-using Size = OpenCvSharp.Size; 
+using Scalar = OpenCvSharp.Scalar;
 
 namespace ECG_API.Infrastructure.ImageProcessing
 {
-    public class CalibrationPulseRemoverService(ILogger<CalibrationPulseRemoverService> logger) : ICalibrationPulseRemoverService
+    public class CalibrationPulseRemoverService(ILogger<CalibrationPulseRemoverService> logger)
+        : ICalibrationPulseRemoverService
     {
-        public Image<Rgba32> RemovePulse(Image<Rgba32> image)
+                public Image<Rgba32> RemovePulse(Image<Rgba32> image)
         {
             try
             {
                 using var cvImage = ConvertImageSharpToBitmap(image).ToMat();
-                using var diagnosticImage = cvImage.Clone(); // Створюємо копію для малювання
                 
                 using var gray = new Mat();
                 Cv2.CvtColor(cvImage, gray, ColorConversionCodes.BGR2GRAY);
-                
+
                 using var binary = new Mat();
-                // Поріг зменшено до 120
-                Cv2.Threshold(gray, binary, 50, 255, ThresholdTypes.BinaryInv);
+                Cv2.Threshold(gray, binary, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
                 
-                using var verticalKernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(1, 15));
-                using var verticalStructures = new Mat();
-                
-                Cv2.Dilate(binary, verticalStructures, verticalKernel, iterations: 2);
-                Cv2.Erode(verticalStructures, verticalStructures, verticalKernel, iterations: 1);
-                
-                Cv2.FindContours(verticalStructures, out Point[][] contours, out _, 
-                    RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-                
-                logger.LogInformation("Знайдено {Count} потенційних вертикальних структур.", contours.Length);
-                
-                // --- ВІДЛАДКА: Малюємо ВСІ знайдені контури зеленим ---
-                Cv2.DrawContours(diagnosticImage, contours, -1, Scalar.Green, 2);
-                
-                Rect pulseBoundingBox = FindPulseContour(contours, image.Height, image.Width);
-                
-                if (pulseBoundingBox.Width > 0 && pulseBoundingBox.Height > 0)
+                using var projection = new Mat();
+                Cv2.Reduce(binary, projection, ReduceDimension.Row, ReduceTypes.Sum, MatType.CV_32S);
+
+                // Знаходимо X-координати центрів ліній посилення
+                var gainLineCenters = FindGainLineCenters(projection, image.Width);
+
+                if (gainLineCenters.Count > 0)
                 {
-                    logger.LogInformation("Видалення калібрувального імпульсу в області: {Rect}", pulseBoundingBox);
-                    diagnosticImage.Rectangle(pulseBoundingBox, Scalar.Red, -1); 
+                    logger.LogInformation("Знайдено {Count} ліній посилення. Видалення...", gainLineCenters.Count);
+                    // Визначаємо ширину області для видалення (наприклад, 10 пікселів)
+                    int removalWidth = 10; 
+
+                    foreach (var centerX in gainLineCenters)
+                    {
+                        // Розраховуємо прямокутник навколо центру лінії
+                        int startX = Math.Max(0, centerX - (removalWidth / 2));
+                        var removalRect = new Rect(startX, 0, removalWidth, image.Height);
+                        // Замальовуємо білим
+                        cvImage.Rectangle(removalRect, Scalar.White, -1);
+                    }
                 }
                 else
                 {
-                    logger.LogWarning("Калібрувальний імпульс не знайдено. Зображення не змінено.");
+                    logger.LogWarning("Лінії посилення не знайдено.");
                 }
-                
-                // --- КОНВЕРТАЦІЯ НАЗАД ---
-                using var resultBitmap = BitmapConverter.ToBitmap(diagnosticImage);
+
+                using var resultBitmap = BitmapConverter.ToBitmap(cvImage);
                 return ConvertBitmapToImageSharp(resultBitmap);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Помилка під час видалення калібрувального імпульсу.");
+                logger.LogError(ex, "Помилка під час видалення ліній посилення.");
                 return image.Clone();
             }
         }
-        
-        // --- Допоміжні методи для конвертації ---
+
+        private List<int> FindGainLineCenters(Mat projection, int imageWidth)
+        {
+            var projectionValues = new List<double>();
+            for (int x = 0; x < imageWidth; x++)
+            {
+                projectionValues.Add(projection.At<int>(0, x));
+            }
+            
+            // --- РОЗРАХУНОК ПОРОГУ (Ваш код) ---
+            var sortedValues = new List<double>(projectionValues);
+            sortedValues.Sort();
+            
+            int percentileIndex = (int)(sortedValues.Count * 0.95);
+            double backgroundLevel = sortedValues[percentileIndex];
+            double gainLineThreshold = backgroundLevel * 4.5; // Ваш коефіцієнт
+            
+            logger.LogInformation("Аналіз проекції для ліній посилення: Рівень фону={bg}, Поріг={threshold}",
+                backgroundLevel, gainLineThreshold);
+
+            var peakCenters = new List<int>();
+            bool inPeak = false;
+            int peakStart = 0;
+
+            for (int x = 0; x < imageWidth; x++)
+            {
+                if (projectionValues[x] > gainLineThreshold && !inPeak)
+                {
+                    // Ми щойно увійшли в пік
+                    inPeak = true;
+                    peakStart = x;
+                }
+                else if (projectionValues[x] < gainLineThreshold && inPeak)
+                {
+                    // Ми щойно вийшли з піку
+                    inPeak = false;
+                    // Розраховуємо центр піку і додаємо до списку
+                    int peakEnd = x - 1;
+                    int peakCenter = peakStart + (peakEnd - peakStart) / 2;
+                    peakCenters.Add(peakCenter);
+                }
+            }
+
+            return peakCenters;
+        }
+        // --- Методи-конвертери (залишаються без змін) ---
         private SystemBitmap ConvertImageSharpToBitmap(ImageSharpImage image)
         {
             using var memoryStream = new MemoryStream();
-            // Зберігаємо зображення ImageSharp в потік у форматі Bmp
             image.SaveAsBmp(memoryStream);
             memoryStream.Position = 0;
-            // Створюємо Bitmap з потоку
             return new SystemBitmap(memoryStream);
         }
 
         private ImageSharpImage ConvertBitmapToImageSharp(SystemBitmap bitmap)
         {
             using var memoryStream = new MemoryStream();
-            // Зберігаємо Bitmap в потік
             bitmap.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Png);
             memoryStream.Position = 0;
-            // Завантажуємо зображення ImageSharp з потоку
             return ImageSharpImage.Load<Rgba32>(memoryStream);
-        }
-
-        // Ваш метод FindPulseContour залишається без змін
-        private Rect FindPulseContour(Point[][] contours, int imageHeight, int imageWidth)
-        {
-            Rect bestCandidate = new Rect();
-            double maxScore = 0;
-
-            foreach (var contour in contours)
-            {
-                var box = Cv2.BoundingRect(contour);
-
-                // Критерій 1: Висота
-                double heightRatio = (double)box.Height / imageHeight;
-                if (heightRatio < 0.5) continue;
-
-                // Критерій 2: Ширина
-                if (box.Width > 30) continue;
-        
-                // Критерій 3: Позиція (в лівих 15% зображення)
-                if (box.Left > imageWidth * 0.15) continue;
-        
-                // Рахуємо оцінку
-                double score = heightRatio - ((double)box.Left / imageWidth); // Бонус за близькість до лівого краю
-        
-                if (score > maxScore)
-                {
-                    maxScore = score;
-                    bestCandidate = box;
-                }
-            }
-
-            return bestCandidate;
         }
     }
 }
