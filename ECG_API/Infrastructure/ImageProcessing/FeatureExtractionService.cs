@@ -11,6 +11,8 @@ namespace ECG_API.Infrastructure.ImageProcessing
         IEcgStripSplitterService stripSplitterService,
         ICalibrationPulseRemoverService pulseRemoverService,
         IEcgSignalIsolationService signalIsolationService,
+        IEcgSignalConnectorService signalConnectorService,
+        IEcgArtifactRemoverService  artifactRemoverService,
         IImageStorageService imageStorageService) : IFeatureExtractionService
     {
 
@@ -30,12 +32,13 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 
                 using var croppedImage = CropImageSafely(originalImage, workingArea);
                 
-                using var signalOnlyTransparent = signalIsolationService.IsolateSignal(croppedImage);
+                using var isolatedSignal  = signalIsolationService.IsolateSignal(croppedImage);
 
                 // --- Крок 2.1: Накладання сигналу на білий фон ---
-                using var signalWithBackground = new Image<Rgba32>(signalOnlyTransparent.Width, signalOnlyTransparent.Height, Color.White);
-                signalWithBackground.Mutate(ctx => ctx.DrawImage(signalOnlyTransparent, 1f)); 
+                using var signalWithBackground = new Image<Rgba32>(isolatedSignal .Width, isolatedSignal .Height, Color.White);
+                signalWithBackground.Mutate(ctx => ctx.DrawImage(isolatedSignal , 1f)); 
                 
+
                 // Видалення калібрувального імпульсу 
                 using var imageWithoutPulse = pulseRemoverService.RemovePulse(signalWithBackground);
                 
@@ -49,12 +52,18 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 //Повертаємо першу смугу для візуалізації 
                 using var firstStrip = strips[0];
                 
+                using var artifactsRemover = artifactRemoverService.RemoveArtifacts(imageWithoutPulse);
+                
+                // --- Крок 4: з'єднання розривів ---
+                using var cleanSignal = signalConnectorService.ConnectSignal(artifactsRemover);
+                
+                using var finalSignal = cleanSignal;
                 
                 using var memoryStream = new MemoryStream();
-                await imageWithoutPulse.SaveAsPngAsync(memoryStream);
-                byte[]? imageWithoutPulseByte = memoryStream.ToArray();
+                await finalSignal.SaveAsPngAsync(memoryStream);
+                byte[]? finalSignalByte = memoryStream.ToArray();
                 
-                return (Array.Empty<float>(), imageWithoutPulseByte);
+                return (Array.Empty<float>(), finalSignalByte);
             }
             catch (Exception ex)
             {
