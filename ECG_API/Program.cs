@@ -12,6 +12,8 @@ builder.Services.AddScoped<IEcgGridGeneratorService, EcgGridGeneratorService>();
 builder.Services.AddScoped<ICalibrationPulseRemoverService, CalibrationPulseRemoverService>();
 builder.Services.AddScoped<IImageStorageService, ImageStorageService>();
 builder.Services.AddScoped<IEcgSignalIsolationService, EcgSignalIsolationService>();
+builder.Services.AddScoped<IEcgSignalConnectorService, EcgSignalConnectorService>();
+builder.Services.AddScoped<IEcgArtifactRemoverService, EcgArtifactRemoverService>();
 builder.Services.AddEndpointsApiExplorer(); 
 
 builder.Services.AddSwaggerGen();

@@ -69,7 +69,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 projectionValues.Add(projection.At<int>(0, x));
             }
             
-            // --- РОЗРАХУНОК ПОРОГУ (Ваш код) ---
             var sortedValues = new List<double>(projectionValues);
             sortedValues.Sort();
             
