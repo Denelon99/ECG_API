@@ -1,6 +1,8 @@
-namespace ECG_API.Core.Services;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
+namespace ECG_API.Core.Services;
 public interface IFeatureExtractionService
 {
-    Task<(float[]? features, byte[]? finalImage)> ProcessEcgImageAsync(Stream imageStream);
+    float[] ExtractFeatures(List<Image<Rgba32>> ecgStrips);
 }

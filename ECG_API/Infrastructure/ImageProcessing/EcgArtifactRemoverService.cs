@@ -4,6 +4,7 @@ using OpenCvSharp.Extensions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System.Drawing;
+using ECG_API.Infrastructure.Extensions;
 using Rect = OpenCvSharp.Rect;
 using ImageSharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
 using Point = OpenCvSharp.Point;
@@ -18,7 +19,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
         {
             try
             {
-                using var cvImage = ConvertImageSharpToBitmap(cleanSignal).ToMat();
+                using var cvImage = cleanSignal.ToBitmap().ToMat();
                 using var gray = new Mat();
                 Cv2.CvtColor(cvImage, gray, ColorConversionCodes.BGR2GRAY);
 
@@ -53,30 +54,13 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 finalMat.SetTo(Scalar.Black, finalBinary);
                 
 
-                return ConvertBitmapToImageSharp(finalMat.ToBitmap());
+                return finalMat.ToBitmap().ToImageSharp();
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Помилка під час морфологічного очищення артефактів.");
                 return cleanSignal.Clone();
             }
-        }
-        
-        // --- Методи-конвертери без змін ---
-        private SystemBitmap ConvertImageSharpToBitmap(ImageSharpImage image)
-        {
-            using var memoryStream = new MemoryStream();
-            image.SaveAsBmp(memoryStream);
-            memoryStream.Position = 0;
-            return new SystemBitmap(memoryStream);
-        }
-
-        private ImageSharpImage ConvertBitmapToImageSharp(SystemBitmap bitmap)
-        {
-            using var memoryStream = new MemoryStream();
-            bitmap.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Png);
-            memoryStream.Position = 0;
-            return ImageSharpImage.Load<Rgba32>(memoryStream);
         }
     }
 }

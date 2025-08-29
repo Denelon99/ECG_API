@@ -4,9 +4,9 @@ using OpenCvSharp.Extensions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Rect = OpenCvSharp.Rect;
-using ImageSharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
-using SystemBitmap = System.Drawing.Bitmap;
 using Scalar = OpenCvSharp.Scalar;
+using ECG_API.Infrastructure.Extensions;
+
 
 namespace ECG_API.Infrastructure.ImageProcessing
 {
@@ -17,7 +17,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
         {
             try
             {
-                using var cvImage = ConvertImageSharpToBitmap(image).ToMat();
+                using var cvImage = image.ToBitmap().ToMat();
                 
                 using var gray = new Mat();
                 Cv2.CvtColor(cvImage, gray, ColorConversionCodes.BGR2GRAY);
@@ -28,21 +28,17 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 using var projection = new Mat();
                 Cv2.Reduce(binary, projection, ReduceDimension.Row, ReduceTypes.Sum, MatType.CV_32S);
 
-                // Знаходимо X-координати центрів ліній посилення
                 var gainLineCenters = FindGainLineCenters(projection, image.Width);
 
                 if (gainLineCenters.Count > 0)
                 {
                     logger.LogInformation("Знайдено {Count} ліній посилення. Видалення...", gainLineCenters.Count);
-                    // Визначаємо ширину області для видалення (наприклад, 10 пікселів)
                     int removalWidth = 10; 
 
                     foreach (var centerX in gainLineCenters)
                     {
-                        // Розраховуємо прямокутник навколо центру лінії
                         int startX = Math.Max(0, centerX - (removalWidth / 2));
                         var removalRect = new Rect(startX, 0, removalWidth, image.Height);
-                        // Замальовуємо білим
                         cvImage.Rectangle(removalRect, Scalar.White, -1);
                     }
                 }
@@ -51,8 +47,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
                     logger.LogWarning("Лінії посилення не знайдено.");
                 }
 
-                using var resultBitmap = BitmapConverter.ToBitmap(cvImage);
-                return ConvertBitmapToImageSharp(resultBitmap);
+                return cvImage.ToBitmap().ToImageSharp();
             }
             catch (Exception ex)
             {
@@ -74,7 +69,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
             
             int percentileIndex = (int)(sortedValues.Count * 0.95);
             double backgroundLevel = sortedValues[percentileIndex];
-            double gainLineThreshold = backgroundLevel * 4.5; // Ваш коефіцієнт
+            double gainLineThreshold = backgroundLevel * 4.5;
             
             logger.LogInformation("Аналіз проекції для ліній посилення: Рівень фону={bg}, Поріг={threshold}",
                 backgroundLevel, gainLineThreshold);
@@ -87,15 +82,12 @@ namespace ECG_API.Infrastructure.ImageProcessing
             {
                 if (projectionValues[x] > gainLineThreshold && !inPeak)
                 {
-                    // Ми щойно увійшли в пік
                     inPeak = true;
                     peakStart = x;
                 }
                 else if (projectionValues[x] < gainLineThreshold && inPeak)
                 {
-                    // Ми щойно вийшли з піку
                     inPeak = false;
-                    // Розраховуємо центр піку і додаємо до списку
                     int peakEnd = x - 1;
                     int peakCenter = peakStart + (peakEnd - peakStart) / 2;
                     peakCenters.Add(peakCenter);
@@ -103,22 +95,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
             }
 
             return peakCenters;
-        }
-        // --- Методи-конвертери (залишаються без змін) ---
-        private SystemBitmap ConvertImageSharpToBitmap(ImageSharpImage image)
-        {
-            using var memoryStream = new MemoryStream();
-            image.SaveAsBmp(memoryStream);
-            memoryStream.Position = 0;
-            return new SystemBitmap(memoryStream);
-        }
-
-        private ImageSharpImage ConvertBitmapToImageSharp(SystemBitmap bitmap)
-        {
-            using var memoryStream = new MemoryStream();
-            bitmap.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Png);
-            memoryStream.Position = 0;
-            return ImageSharpImage.Load<Rgba32>(memoryStream);
         }
     }
 }
