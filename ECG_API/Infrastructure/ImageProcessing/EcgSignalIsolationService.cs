@@ -7,7 +7,7 @@ namespace ECG_API.Infrastructure.ImageProcessing;
 public class EcgSignalIsolationService(ILogger<EcgSignalIsolationService> logger) : IEcgSignalIsolationService
 {
     // Поріг для визначення "темного" пікселя (сигналу).
-    private const byte ColorThreshold = 50; // Треб дізнатись більш коректну межу, але з 50 залишається тільки сигнал ЕКГ
+    private const byte ColorThreshold = 50;
 
     public Image<Rgba32> IsolateSignal(Image<Rgba32> ecgStrip)
     {

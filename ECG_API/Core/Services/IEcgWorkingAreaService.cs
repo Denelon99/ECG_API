@@ -5,5 +5,5 @@ namespace ECG_API.Core.Services;
 
 public interface IEcgWorkingAreaService
 {
-        Rectangle FindWorkingArea(Image<Rgba32> image);
+        Image<Rgba32>? FindAndCropWorkingArea(Image<Rgba32> originalImage);
 }

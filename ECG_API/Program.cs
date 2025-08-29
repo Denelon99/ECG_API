@@ -6,16 +6,20 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 builder.Services.AddScoped<IEcgWorkingAreaService, EcgWorkingAreaService>();
+builder.Services.AddScoped<ICalibrationPulseRemoverService, CalibrationPulseRemoverService>();
 builder.Services.AddScoped<IFeatureExtractionService, FeatureExtractionService>();
 builder.Services.AddScoped<IEcgStripSplitterService, EcgStripSplitterService>();
-builder.Services.AddScoped<IEcgGridGeneratorService, EcgGridGeneratorService>();
-builder.Services.AddScoped<ICalibrationPulseRemoverService, CalibrationPulseRemoverService>();
-builder.Services.AddScoped<IImageStorageService, ImageStorageService>();
 builder.Services.AddScoped<IEcgSignalIsolationService, EcgSignalIsolationService>();
 builder.Services.AddScoped<IEcgSignalConnectorService, EcgSignalConnectorService>();
 builder.Services.AddScoped<IEcgArtifactRemoverService, EcgArtifactRemoverService>();
-builder.Services.AddEndpointsApiExplorer(); 
+builder.Services.AddScoped<IEcgBaselineService, EcgBaselineService>();
+builder.Services.AddScoped<IEcgVisualizerService, EcgVisualizerService>();
+builder.Services.AddScoped<IEcgPreprocessorService, EcgPreprocessorService>();
+// ще не реалізовані сервіси (не використовуються)
+builder.Services.AddScoped<IEcgGridGeneratorService, EcgGridGeneratorService>();
+builder.Services.AddScoped<IImageStorageService, ImageStorageService>();
 
+builder.Services.AddEndpointsApiExplorer(); 
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();

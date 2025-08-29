@@ -1,54 +1,59 @@
 using ECG_API.Core.Services;
+using ECG_API.Infrastructure.Extensions;
 using OpenCvSharp;
+using OpenCvSharp.Extensions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 using Point = OpenCvSharp.Point;
 
 namespace ECG_API.Infrastructure.ImageProcessing
 {
     public class EcgWorkingAreaService(ILogger<EcgWorkingAreaService> logger) : IEcgWorkingAreaService
     {
-        public Rectangle FindWorkingArea(Image<Rgba32> image)
+        public Image<Rgba32>? FindAndCropWorkingArea(Image<Rgba32> originalImage)
         {
             try
             {
-                using var cvImage = ConvertToOpenCvMat(image);
-                
+                using var cvImage = originalImage.ToBitmap().ToMat();
                 using var gray = new Mat();
                 Cv2.CvtColor(cvImage, gray, ColorConversionCodes.BGR2GRAY);
                 
                 var signalRect = DetectSignalArea(gray);
                 
-                logger?.LogInformation($"Знайдено область сигналу: {signalRect}");
-                return new Rectangle(signalRect.X, signalRect.Y, signalRect.Width, signalRect.Height);
+                if (signalRect.Width <= 0 || signalRect.Height <= 0)
+                {
+                    logger.LogWarning("Робочу область не знайдено, повертаємо повне зображення.");
+                    return originalImage.Clone();
+                }
+
+                logger.LogInformation("Знайдено область сигналу: {SignalRect}", signalRect);
+                
+                var cropArea = new Rectangle(signalRect.X, signalRect.Y, signalRect.Width, signalRect.Height);
+                
+                return CropImageSafely(originalImage, cropArea);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Помилка при пошуку робочої області ЕКГ");
-                throw;
+                logger.LogError(ex, "Помилка при пошуку та обрізці робочої області ЕКГ");
+                return null;
             }
         }
-
-        private Mat ConvertToOpenCvMat(Image<Rgba32> image)
+        private Image<Rgba32> CropImageSafely(Image<Rgba32> image, Rectangle cropArea)
         {
-            var mat = new Mat(image.Height, image.Width, MatType.CV_8UC3);
+            var safeX = Math.Max(0, Math.Min(cropArea.X, image.Width - 1));
+            var safeY = Math.Max(0, Math.Min(cropArea.Y, image.Height - 1));
+            var safeWidth = Math.Max(1, Math.Min(cropArea.Width, image.Width - safeX));
+            var safeHeight = Math.Max(1, Math.Min(cropArea.Height, image.Height - safeY));
+
+            var safeCropArea = new Rectangle(safeX, safeY, safeWidth, safeHeight);
+
+            logger.LogDebug($"Обрізка: оригінал {cropArea} -> безпечна {safeCropArea}");
             
-            image.ProcessPixelRows(accessor =>
-            {
-                for (int y = 0; y < image.Height; y++)
-                {
-                    var row = accessor.GetRowSpan(y);
-                    var matIndexer = mat.GetGenericIndexer<Vec3b>();
-                    
-                    for (int x = 0; x < image.Width; x++)
-                    {
-                        var pixel = row[x];
-                        matIndexer[y, x] = new Vec3b(pixel.B, pixel.G, pixel.R);
-                    }
-                }
-            });
+            var croppedImage = image.Clone();
             
-            return mat;
+            croppedImage.Mutate(ctx => ctx.Crop(safeCropArea));
+            return croppedImage;
         }
 
         private Rect DetectSignalArea(Mat grayImage)
