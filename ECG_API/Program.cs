@@ -1,5 +1,9 @@
 using ECG_API.Infrastructure.ImageProcessing; 
-using ECG_API.Core.Services; 
+using ECG_API.Core.Services;
+using ECG_API.Infrastructure.Storage;
+using ECG_API.Core.MLModels;
+using ECG_API.Infrastructure.MachineLearning;
+using Microsoft.Extensions.ML; 
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,9 +19,17 @@ builder.Services.AddScoped<IEcgArtifactRemoverService, EcgArtifactRemoverService
 builder.Services.AddScoped<IEcgBaselineService, EcgBaselineService>();
 builder.Services.AddScoped<IEcgVisualizerService, EcgVisualizerService>();
 builder.Services.AddScoped<IEcgPreprocessorService, EcgPreprocessorService>();
-// ще не реалізовані сервіси (не використовуються)
-builder.Services.AddScoped<IEcgGridGeneratorService, EcgGridGeneratorService>();
 builder.Services.AddScoped<IImageStorageService, ImageStorageService>();
+builder.Services.AddScoped<IFeatureCalculatorService, FeatureCalculatorService>();
+builder.Services.AddScoped<IGainLineDetectorService, GainLineDetectorService>();
+builder.Services.AddPredictionEnginePool<ModelInput, ModelOutput>()
+    .FromFile(
+        modelName: "EcgClassificationModel", 
+        filePath: "Core/MLModels/EcgClassifier.zip",
+        watchForChanges: true
+    );
+
+builder.Services.AddScoped<IPredictionService, PredictionService>();
 
 builder.Services.AddEndpointsApiExplorer(); 
 builder.Services.AddSwaggerGen();

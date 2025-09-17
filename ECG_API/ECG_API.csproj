@@ -9,6 +9,10 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.7"/>
+        <PackageReference Include="Microsoft.Extensions.FileProviders.Abstractions" Version="9.0.8" />
+        <PackageReference Include="Microsoft.Extensions.ML" Version="4.0.2" />
+        <PackageReference Include="Microsoft.ML" Version="4.0.2" />
+        <PackageReference Include="Microsoft.ML.LightGbm" Version="4.0.2" />
         <PackageReference Include="OpenCvSharp4.Extensions" Version="4.11.0.20250507" />
         <PackageReference Include="OpenCvSharp4.Windows" Version="4.11.0.20250507" />
         <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
@@ -19,7 +23,9 @@
 
     <ItemGroup>
       <Folder Include="Core\Models\" />
-      <Folder Include="MachineLearning\Models\" />
+      <Folder Include="ProcessedImages\full_results\" />
+      <Folder Include="ProcessedImages\results\" />
+      <Folder Include="ProcessedImages\strips\" />
     </ItemGroup>
 
 </Project>
