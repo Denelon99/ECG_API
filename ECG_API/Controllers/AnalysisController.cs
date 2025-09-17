@@ -1,69 +1,108 @@
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
-using ECG_API.Core.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using ECG_API.Core.Services;
+using ECG_API.Core.MLModels;
 
 namespace ECG_API.Controllers
 {
     public class AnalyzeImageRequest
     {
-        [Required] public required IFormFile ImageFile { get; set; }
+        [Required]
+        public required IFormFile ImageFile { get; set; }
     }
-
+    
     [ApiController]
     [Route("api/[controller]")]
-    public class AnalysisController(
-        ILogger<AnalysisController> logger,
-        IEcgPreprocessorService preprocessorService,
-        IFeatureExtractionService featureExtractionService,
-        IEcgVisualizerService visualizerService) : ControllerBase
+    public class AnalysisController : ControllerBase
     {
+        private readonly ILogger<AnalysisController> _logger;
+        private readonly IEcgPreprocessorService _preprocessorService;
+        private readonly IFeatureExtractionService _featureExtractionService;
+        private readonly IPredictionService _predictionService;
+        private readonly IEcgVisualizerService _visualizerService;
+        private readonly IEcgBaselineService _baselineService;
+        private readonly IImageStorageService _imageStorageService;
+
+        public AnalysisController(
+            ILogger<AnalysisController> logger, 
+            IEcgPreprocessorService preprocessorService,
+            IFeatureExtractionService featureExtractionService,
+            IPredictionService predictionService,
+            IEcgVisualizerService visualizerService,
+            IEcgBaselineService baselineService,
+            IImageStorageService imageStorageService)
+        {
+            _logger = logger;
+            _preprocessorService = preprocessorService;
+            _featureExtractionService = featureExtractionService;
+            _predictionService = predictionService;
+            _visualizerService = visualizerService;
+            _baselineService = baselineService;
+            _imageStorageService = imageStorageService;
+        }
+
         [HttpPost("analyze")]
         public async Task<IActionResult> AnalyzeImage([FromForm] AnalyzeImageRequest request)
         {
+            List<Image<Rgba32>>? cleanStrips = null;
             try
             {
                 await using var imageStream = request.ImageFile.OpenReadStream();
                 using var originalImage = await Image.LoadAsync<Rgba32>(imageStream);
 
-                var cleanStrips = preprocessorService.Preprocess(originalImage);
+                var preprocessingResult = await _preprocessorService.PreprocessAsync(originalImage);
+                cleanStrips = preprocessingResult.Strips;
 
-                if (cleanStrips == null || cleanStrips.Count == 0)
+                using (preprocessingResult.FullCleanImage)
                 {
-                    return StatusCode(500, "Помилка на етапі попередньої обробки.");
-                }
+                    if (!cleanStrips.Any())
+                    {
+                        return StatusCode(500, "Помилка: не отримано жодної смуги після попередньої обробки.");
+                    }
 
-                var features = featureExtractionService.ExtractFeatures(cleanStrips);
+                    await _imageStorageService.SaveImageAsync(preprocessingResult.FullCleanImage, 
+                        $"full_clean_{DateTime.Now:yyyyMMdd_HHmmssfff}", "full_results");
 
-                using var firstStrip = cleanStrips.FirstOrDefault()?.Clone();
-                byte[]? visualizationBytes = null;
-                if (firstStrip != null)
-                {
-                    var baselineService = HttpContext.RequestServices.GetRequiredService<IEcgBaselineService>();
-                    int baseline = baselineService.FindBaseline(firstStrip);
+                    var features = _featureExtractionService.ExtractFeatures(cleanStrips);
 
-                    using var visualImage = visualizerService.CreateVisualisation(firstStrip, baseline);
-                    using var ms = new MemoryStream();
-                    await visualImage.SaveAsPngAsync(ms);
-                    visualizationBytes = ms.ToArray();
-                }
+                    var modelInput = new ModelInput { Features = features };
+                    var prediction = _predictionService.Predict(modelInput);
+                    string predictedDiagnosis = prediction.PredictedDiagnosis;
+                    _logger.LogInformation(">>> ПРОГНОЗ МОДЕЛІ: {Diagnosis} <<<", predictedDiagnosis);
 
-                cleanStrips.ForEach(strip => strip.Dispose());
+                    byte[] visualizationBytes;
+                    using (var firstStrip = cleanStrips[0].Clone())
+                    {
+                        var baseline = _baselineService.FindBaseline(firstStrip);
+                        using var visualImage = _visualizerService.CreateVisualisation(firstStrip, baseline);
+                        
+                        await _imageStorageService.SaveImageAsync(visualImage, $"result_{DateTime.Now:yyyyMMdd_HHmmssfff}", "results");
 
-                logger.LogInformation("Фінальний вектор ознак: [{Features}]", string.Join(", ", features));
+                        using var ms = new MemoryStream();
+                        await visualImage.SaveAsPngAsync(ms);
+                        visualizationBytes = ms.ToArray();
+                    }
+                    
+                    var featuresString = string.Join(";", features.Select(f => f.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                    Response.Headers.Append("X-ECG-Predicted-Diagnosis", predictedDiagnosis);
+                    Response.Headers.Append("X-ECG-Feature-Count", features.Length.ToString());
 
-                if (visualizationBytes != null)
-                {
                     return File(visualizationBytes, "image/png");
                 }
-
-                return Ok(new { Message = "Обробка завершена, але візуалізація не створена." });
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Критична помилка в контролері аналізу.");
-                return StatusCode(500, "Внутрішня помилка сервера.");
+                _logger.LogError(ex, "Критична помилка в контролері аналізу.");
+                return StatusCode(500, new { Error = "Внутрішня помилка сервера.", Details = ex.Message });
+            }
+            finally
+            {
+                if (cleanStrips != null)
+                {
+                    cleanStrips.ForEach(strip => strip.Dispose());
+                }
             }
         }
     }

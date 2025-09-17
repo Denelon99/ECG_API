@@ -12,34 +12,39 @@ namespace ECG_API.Infrastructure.ImageProcessing
         ICalibrationPulseRemoverService pulseRemoverService,
         IEcgArtifactRemoverService artifactRemoverService,
         IEcgSignalConnectorService signalConnectorService,
+        IImageStorageService imageStorageService,
         IEcgStripSplitterService stripSplitterService) : IEcgPreprocessorService
     {
-        public List<Image<Rgba32>> Preprocess(Image<Rgba32> originalImage)
+        public async Task<PreprocessingResult> PreprocessAsync(Image<Rgba32> originalImage)
         {
             logger.LogInformation("--- Початок конвеєра попередньої обробки ---");
 
-            using var croppedImage = workingAreaService.FindAndCropWorkingArea(originalImage);
-        
-            if (croppedImage == null)
-            {
-                logger.LogError("Не вдалося отримати робочу область. Зупинка обробки.");
-                return new List<Image<Rgba32>>();
-            }            
+            using var croppedImage = workingAreaService.FindAndCropWorkingArea(originalImage) 
+                                     ?? throw new InvalidOperationException("Не вдалося обрізати робочу область.");
+
             using var isolatedSignal = signalIsolationService.IsolateSignal(croppedImage);
-            
+
             using var signalWithBackground = new Image<Rgba32>(isolatedSignal.Width, isolatedSignal.Height, Color.White);
             signalWithBackground.Mutate(ctx => ctx.DrawImage(isolatedSignal, 1f));
-            
-            using var imageWithoutPulse = pulseRemoverService.RemovePulse(signalWithBackground);
-            
-            using var artifactsRemoved = artifactRemoverService.RemoveArtifacts(imageWithoutPulse);
-            
-            using var cleanSignal = signalConnectorService.ConnectSignal(artifactsRemoved);
-            
-            var strips = stripSplitterService.SplitIntoStrips(cleanSignal, 4);
-            
+
+            using var imageWithoutGainLines = pulseRemoverService.RemovePulse(signalWithBackground);
+            using var artifactsRemoved = artifactRemoverService.RemoveArtifacts(imageWithoutGainLines);
+            using var finalCleanSignal = signalConnectorService.ConnectSignal(artifactsRemoved);
+    
+            var strips = stripSplitterService.SplitIntoStrips(finalCleanSignal, 4);
+
+            if (strips.Any())
+            {
+                var baseFileName = $"ecg_{DateTime.Now:yyyyMMdd_HHmmssfff}";
+                await imageStorageService.SaveImageStripsAsync(strips, baseFileName, "strips");
+            }
+
             logger.LogInformation("--- Попередня обробка завершена. Отримано {Count} смуг. ---", strips.Count);
-            return strips;
+            return new PreprocessingResult
+            {
+                FullCleanImage = finalCleanSignal.Clone(),
+                Strips = strips
+            };
         }
     }
 }
