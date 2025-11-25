@@ -22,6 +22,7 @@ builder.Services.AddScoped<IEcgPreprocessorService, EcgPreprocessorService>();
 builder.Services.AddScoped<IImageStorageService, ImageStorageService>();
 builder.Services.AddScoped<IFeatureCalculatorService, FeatureCalculatorService>();
 builder.Services.AddScoped<IGainLineDetectorService, GainLineDetectorService>();
+builder.Services.AddScoped<IHistogramVisualizerService, HistogramVisualizerService>();
 builder.Services.AddPredictionEnginePool<ModelInput, ModelOutput>()
     .FromFile(
         modelName: "EcgClassificationModel", 

@@ -14,11 +14,10 @@ namespace ECG_API.Infrastructure.ImageProcessing
         {
             try
             {
-                var gainLineCenters = gainLineDetector.DetectGainLineCenters(image);
+                var detectionResult = gainLineDetector.DetectGainLines(image);
 
-                if (gainLineCenters.Count == 0)
+                if (detectionResult.Centers.Count == 0)
                 {
-                    logger.LogWarning("Лінії посилення не знайдено, зображення не змінено.");
                     return image.Clone();
                 }
 
@@ -27,7 +26,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
 
                 resultImage.Mutate(ctx =>
                 {
-                    foreach (var centerX in gainLineCenters)
+                    foreach (var centerX in detectionResult.Centers)
                     {
                         int startX = Math.Max(0, centerX - (removalWidth / 2));
                         var removalRect = new Rectangle(startX, 0, removalWidth, image.Height);
@@ -35,12 +34,10 @@ namespace ECG_API.Infrastructure.ImageProcessing
                     }
                 });
                 
-                logger.LogInformation("Успішно видалено {Count} ліній посилення.", gainLineCenters.Count);
                 return resultImage;
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Помилка під час видалення ліній посилення.");
                 return image.Clone();
             }
         }

@@ -26,8 +26,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
                     logger.LogWarning("Робочу область не знайдено, повертаємо повне зображення.");
                     return originalImage.Clone();
                 }
-
-                logger.LogInformation("Знайдено область сигналу: {SignalRect}", signalRect);
                 
                 var cropArea = new Rectangle(signalRect.X, signalRect.Y, signalRect.Width, signalRect.Height);
                 
@@ -48,8 +46,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
 
             var safeCropArea = new Rectangle(safeX, safeY, safeWidth, safeHeight);
 
-            logger.LogDebug($"Обрізка: оригінал {cropArea} -> безпечна {safeCropArea}");
-            
             var croppedImage = image.Clone();
             
             croppedImage.Mutate(ctx => ctx.Crop(safeCropArea));
@@ -85,8 +81,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
                     largestContour = contour;
                 }
             }
-    
-            logger.LogInformation("Знайдено найбільший контур з площею: {MaxArea}", maxArea);
     
             OpenCvSharp.Rect boundingRect = Cv2.BoundingRect(largestContour);
 

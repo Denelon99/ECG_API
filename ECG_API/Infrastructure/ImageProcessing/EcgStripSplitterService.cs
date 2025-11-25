@@ -29,10 +29,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
             for (int i = 0; i < numberOfStrips; i++)
             {
                 int y = i * stripHeight;
-
-                // --- ЛОГІКА ДЛЯ ОСТАННЬОЇ СМУГИ ---
-                // Якщо це остання смуга, беремо всю залишкову висоту,
-                // щоб уникнути помилок округлення.
+                
                 int height = (i == numberOfStrips - 1)
                     ? image.Height - y
                     : stripHeight;
@@ -49,8 +46,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 result.Add(strip);
             }
 
-            logger.LogInformation("Зображення було вдало розділено на {StripsCount} горизонтальних смуг.",
-                result.Count);
             return result;
         }
     }

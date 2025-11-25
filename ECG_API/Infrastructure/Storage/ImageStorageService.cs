@@ -27,7 +27,6 @@ public class ImageStorageService(IWebHostEnvironment webHostEnvironment, ILogger
 
         await image.SaveAsPngAsync(fullPath);
 
-        logger.LogInformation("Зображення успішно збережено за шляхом: {FullPath}", fullPath);
         return fullPath;
     }
     public async Task<List<string>> SaveImageStripsAsync(List<Image<Rgba32>> images, string baseFileName, string? subfolder = null)
@@ -47,7 +46,6 @@ public class ImageStorageService(IWebHostEnvironment webHostEnvironment, ILogger
             savedFilePaths.Add(filePath);
         }
 
-        logger.LogInformation("Успішно збережено {Count} смуг.", images.Count);
         return savedFilePaths;
     }
 }
