@@ -13,24 +13,26 @@ namespace ECG_API.Infrastructure.ImageProcessing
         IEcgArtifactRemoverService artifactRemoverService,
         IEcgSignalConnectorService signalConnectorService,
         IImageStorageService imageStorageService,
+        IHistogramVisualizerService histogramVisualizerService,
         IEcgStripSplitterService stripSplitterService) : IEcgPreprocessorService
     {
         public async Task<PreprocessingResult> PreprocessAsync(Image<Rgba32> originalImage)
         {
-            logger.LogInformation("--- Початок конвеєра попередньої обробки ---");
 
             using var croppedImage = workingAreaService.FindAndCropWorkingArea(originalImage) 
                                      ?? throw new InvalidOperationException("Не вдалося обрізати робочу область.");
 
             using var isolatedSignal = signalIsolationService.IsolateSignal(croppedImage);
-
+            
             using var signalWithBackground = new Image<Rgba32>(isolatedSignal.Width, isolatedSignal.Height, Color.White);
             signalWithBackground.Mutate(ctx => ctx.DrawImage(isolatedSignal, 1f));
-
+            
+            using var histogramImage = histogramVisualizerService.CreateVerticalProjectionHistogram(signalWithBackground);
+            
             using var imageWithoutGainLines = pulseRemoverService.RemovePulse(signalWithBackground);
             using var artifactsRemoved = artifactRemoverService.RemoveArtifacts(imageWithoutGainLines);
             using var finalCleanSignal = signalConnectorService.ConnectSignal(artifactsRemoved);
-    
+            
             var strips = stripSplitterService.SplitIntoStrips(finalCleanSignal, 4);
 
             if (strips.Any())
@@ -39,7 +41,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 await imageStorageService.SaveImageStripsAsync(strips, baseFileName, "strips");
             }
 
-            logger.LogInformation("--- Попередня обробка завершена. Отримано {Count} смуг. ---", strips.Count);
             return new PreprocessingResult
             {
                 FullCleanImage = finalCleanSignal.Clone(),

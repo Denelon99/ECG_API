@@ -47,7 +47,6 @@ public class FeatureCalculatorService(ILogger<FeatureCalculatorService> logger) 
             features.Add(areaBelow);
         }
 
-        logger.LogInformation("Розраховано {Count} ознак для смуги.", features.Count);
         return features.ToArray();
     }
 

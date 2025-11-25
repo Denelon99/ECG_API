@@ -5,5 +5,6 @@ namespace ECG_API.Core.Services;
 
 public interface IEcgVisualizerService
 {
-    Image<Rgba32> CreateVisualisation(Image<Rgba32> ecgStrip, int baselineY);
+    Image<Rgba32> CreateFullVisualisation(PreprocessingResult preprocessingResult);
+    
 }

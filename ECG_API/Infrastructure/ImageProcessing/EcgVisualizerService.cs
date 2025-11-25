@@ -5,51 +5,77 @@ using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
 namespace ECG_API.Infrastructure.ImageProcessing;
-public class EcgVisualizerService(ILogger<EcgVisualizerService> logger)  : IEcgVisualizerService
+public class EcgVisualizerService(ILogger<EcgVisualizerService> logger,
+    IEcgBaselineService baselineService)  : IEcgVisualizerService
 {
     private static readonly Color BaselineColor = Color.Green;
     private static readonly Color AreaAboveColor = Color.FromRgba(66, 135, 245, 128);
     private static readonly Color AreaBelowColor = Color.FromRgba(245, 66, 66, 128);
     
-    public Image<Rgba32> CreateVisualisation(Image<Rgba32> ecgStrip, int baselineY)
-    {
-        if (ecgStrip == null || baselineY < 0)
+    public Image<Rgba32> CreateFullVisualisation(PreprocessingResult preprocessingResult)
         {
-            logger.LogWarning("Невалідні дані для візуалізації.");
-            return new Image<Rgba32>(1, 1);
-        }
-            
-        var canvas = ecgStrip.Clone();
-
-        for (int x = 0; x < canvas.Width; x++)
-        {
-            int signalY = FindSignalYInColumn(ecgStrip, x);
-            if (signalY != -1)
+            if (preprocessingResult?.FullCleanImage == null || !preprocessingResult.Strips.Any())
             {
-                if (signalY < baselineY) // Площа над лінією
+                logger.LogWarning("Невалідні дані для повної візуалізації.");
+                return new Image<Rgba32>(1, 1);
+            }
+
+            var canvas = preprocessingResult.FullCleanImage.Clone();
+
+            int currentY_offset = 0;
+            foreach (var strip in preprocessingResult.Strips)
+            {
+                int baselineY_relative = baselineService.FindBaseline(strip);
+                
+                if (baselineY_relative != -1)
                 {
-                    for (int y = signalY; y < baselineY; y++)
-                    {
-                        canvas[x, y] = Blend(canvas[x, y], AreaAboveColor);
-                    }
+                    int baselineY_absolute = currentY_offset + baselineY_relative;
+                    
+                    PaintAreasOnCanvas(canvas, strip, baselineY_relative, currentY_offset);
+                    
+                    canvas.Mutate(ctx => ctx.DrawLine(BaselineColor, 2, 
+                        new PointF(0, baselineY_absolute), 
+                        new PointF(canvas.Width, baselineY_absolute)));
                 }
-                else // Площа під лінією
+                
+                currentY_offset += strip.Height;
+            }
+
+            return canvas;
+        }
+        
+        private void PaintAreasOnCanvas(Image<Rgba32> canvas, Image<Rgba32> strip, int baselineY, int yOffset)
+        {
+            for (int x = 0; x < strip.Width; x++)
+            {
+                int signalY = FindSignalYInColumn(strip, x);
+                if (signalY != -1)
                 {
-                    for (int y = baselineY; y <= signalY; y++)
+                    if (signalY < baselineY)
                     {
-                        canvas[x, y] = Blend(canvas[x, y], AreaBelowColor);
+                        for (int y = signalY; y < baselineY; y++)
+                        {
+                            int absoluteY = yOffset + y;
+                            if (absoluteY < canvas.Height)
+                            {
+                                canvas[x, absoluteY] = Blend(canvas[x, absoluteY], AreaAboveColor);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (int y = baselineY; y <= signalY; y++)
+                        {
+                            int absoluteY = yOffset + y;
+                            if (absoluteY < canvas.Height)
+                            {
+                                canvas[x, absoluteY] = Blend(canvas[x, absoluteY], AreaBelowColor);
+                            }
+                        }
                     }
                 }
             }
         }
-            
-        canvas.Mutate(ctx => 
-            ctx.DrawLine(BaselineColor, 2, new PointF(0, baselineY), new PointF(canvas.Width, baselineY))
-        );
-            
-        logger.LogInformation("Створено зображення для візуалізації.");
-        return canvas;
-    }
     
     private int FindSignalYInColumn(Image<Rgba32> image, int x)
     {

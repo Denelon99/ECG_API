@@ -6,14 +6,10 @@ namespace ECG_API.Infrastructure.ImageProcessing;
 
 public class EcgSignalIsolationService(ILogger<EcgSignalIsolationService> logger) : IEcgSignalIsolationService
 {
-    // Поріг для визначення "темного" пікселя (сигналу).
     private const byte ColorThreshold = 50;
 
     public Image<Rgba32> IsolateSignal(Image<Rgba32> ecgStrip)
     {
-        logger.LogInformation("Початок ізоляції сигналу на зображенні {Width}x{Height}.", ecgStrip.Width,
-            ecgStrip.Height);
-
         var signalOnlyImage = new Image<Rgba32>(ecgStrip.Width, ecgStrip.Height);
 
         for (int y = 0; y < ecgStrip.Height; y++)
@@ -31,7 +27,6 @@ public class EcgSignalIsolationService(ILogger<EcgSignalIsolationService> logger
             }
         }
 
-        logger.LogInformation("Ізоляція сигналу завершена.");
         return signalOnlyImage;
     }
 }

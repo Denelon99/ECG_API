@@ -70,20 +70,15 @@ namespace ECG_API.Controllers
                     var modelInput = new ModelInput { Features = features };
                     var prediction = _predictionService.Predict(modelInput);
                     string predictedDiagnosis = prediction.PredictedDiagnosis;
-                    _logger.LogInformation(">>> ПРОГНОЗ МОДЕЛІ: {Diagnosis} <<<", predictedDiagnosis);
 
-                    byte[] visualizationBytes;
-                    using (var firstStrip = cleanStrips[0].Clone())
-                    {
-                        var baseline = _baselineService.FindBaseline(firstStrip);
-                        using var visualImage = _visualizerService.CreateVisualisation(firstStrip, baseline);
-                        
-                        await _imageStorageService.SaveImageAsync(visualImage, $"result_{DateTime.Now:yyyyMMdd_HHmmssfff}", "results");
+                    using var fullVisualImage = _visualizerService.CreateFullVisualisation(preprocessingResult);
+                    
+                    await _imageStorageService.SaveImageAsync(fullVisualImage, 
+                        $"full_result_{DateTime.Now:yyyyMMdd_HHmmssfff}", "results");
 
-                        using var ms = new MemoryStream();
-                        await visualImage.SaveAsPngAsync(ms);
-                        visualizationBytes = ms.ToArray();
-                    }
+                    using var ms = new MemoryStream();
+                    await fullVisualImage.SaveAsPngAsync(ms);
+                    byte[] visualizationBytes = ms.ToArray();
                     
                     var featuresString = string.Join(";", features.Select(f => f.ToString(System.Globalization.CultureInfo.InvariantCulture)));
                     Response.Headers.Append("X-ECG-Predicted-Diagnosis", predictedDiagnosis);

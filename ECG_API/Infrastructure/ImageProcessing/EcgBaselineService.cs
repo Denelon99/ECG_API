@@ -10,7 +10,6 @@ public class EcgBaselineService(ILogger<EcgBaselineService> logger) : IEcgBaseli
     {
         if (ecgStrip == null || ecgStrip.Width == 0 || ecgStrip.Height == 0)
         {
-            logger.LogWarning("На вхід FindBaseline передано невалідне зображення.");
             return -1;
         }
 
@@ -43,16 +42,6 @@ public class EcgBaselineService(ILogger<EcgBaselineService> logger) : IEcgBaseli
                 baselineY = y;
             }
         }
-
-        if (baselineY != -1)
-        {
-            logger.LogInformation("Знайдено базову лінію на Y={BaselineY} з щільністю {MaxCount} пікселів.", baselineY, maxCount);
-        }
-        else
-        {
-            logger.LogWarning("Не вдалося знайти базову лінію.");
-        }
-            
         return baselineY;
     }
 }

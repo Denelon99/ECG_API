@@ -8,7 +8,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
 {
     public class GainLineDetectorService(ILogger<GainLineDetectorService> logger) : IGainLineDetectorService
     {
-        public List<int> DetectGainLineCenters(ImageSharpImage ecgImage)
+        public GainLineDetectionResult DetectGainLines(ImageSharpImage ecgImage)
         {
             try
             {
@@ -22,16 +22,23 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 using var projection = new Mat();
                 Cv2.Reduce(binary, projection, ReduceDimension.Row, ReduceTypes.Sum, MatType.CV_32S);
                 
-                return FindPeakCenters(projection, ecgImage.Width);
+                var centers = FindPeakCenters(projection, ecgImage.Width, out double threshold);
+                
+                return new GainLineDetectionResult
+                {
+                    Centers = centers,
+                    Projection = projection.Clone(),
+                    Threshold = threshold
+                };
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Помилка під час детекції ліній посилення.");
-                return new List<int>();
+                return new GainLineDetectionResult();
             }
         }
 
-        private List<int> FindPeakCenters(Mat projection, int imageWidth)
+        private List<int> FindPeakCenters(Mat projection, int imageWidth, out double threshold)
         {
             var projectionValues = new List<double>();
             for (int x = 0; x < imageWidth; x++)
@@ -46,9 +53,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
             double backgroundLevel = sortedValues[percentileIndex];
             
             double gainLineThreshold = backgroundLevel * 1.5;
-            
-            logger.LogInformation("Аналіз проекції для ліній посилення: Рівень фону={bg}, Поріг={threshold}",
-                backgroundLevel, gainLineThreshold);
+            threshold = gainLineThreshold;
 
             var peakCenters = new List<int>();
             bool inPeak = false;
@@ -70,7 +75,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 }
             }
             
-            logger.LogInformation("Детектовано {Count} центрів ліній посилення.", peakCenters.Count);
             return peakCenters;
         }
     }

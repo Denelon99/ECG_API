@@ -23,7 +23,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
                 using var projection = new Mat();
                 Cv2.Reduce(binary, projection, ReduceDimension.Row, ReduceTypes.Sum, MatType.CV_32S);
                 var gapZones = FindGapZones(projection, cvImage.Width);
-                logger.LogInformation("Знайдено {Count} зон розривів для з'єднання.", gapZones.Count);
 
                 foreach (var (start, end) in gapZones)
                 {
@@ -37,7 +36,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Помилка під час з'єднання розривів сигналу.");
                 return signalWithGaps.Clone();
             }
         }
@@ -75,9 +73,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
             var rightEndpoints = FindSignalEndpointsInColumn(binaryImage, endX + 1);
             
             if (leftEndpoints.Count == 0 || rightEndpoints.Count == 0) return;
-
-            logger.LogDebug("Для розриву X=[{start}..{end}] знайдено {L} лівих та {R} правих кінцевих точок.",
-                startX, endX, leftEndpoints.Count, rightEndpoints.Count);
 
             foreach (var leftPoint in leftEndpoints)
             {
