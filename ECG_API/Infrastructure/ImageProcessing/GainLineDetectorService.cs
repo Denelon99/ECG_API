@@ -1,6 +1,5 @@
 using ECG_API.Core.Services;
 using OpenCvSharp;
-using OpenCvSharp.Extensions;
 using ECG_API.Infrastructure.Extensions;
 using ImageSharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
 
@@ -12,7 +11,7 @@ namespace ECG_API.Infrastructure.ImageProcessing
         {
             try
             {
-                using var cvImage = ecgImage.ToBitmap().ToMat();
+                using var cvImage = ecgImage.ToMat();
                 using var gray = new Mat();
                 Cv2.CvtColor(cvImage, gray, ColorConversionCodes.BGR2GRAY);
 

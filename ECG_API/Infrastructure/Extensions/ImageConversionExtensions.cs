@@ -1,27 +1,25 @@
+using OpenCvSharp;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using ImageSharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
-using SystemBitmap = System.Drawing.Bitmap;
 
 namespace ECG_API.Infrastructure.Extensions
 {
+    // Конвертація ImageSharp <-> OpenCV Mat через PNG-байти, без System.Drawing (працює лише на Windows).
     public static class ImageConversionExtensions
     {
-
-        public static SystemBitmap ToBitmap(this ImageSharpImage image)
+        // Повертає 3-канальний BGR Mat (CV_8UC3) — сервіси очікують саме BGR для BGR2GRAY.
+        public static Mat ToMat(this ImageSharpImage image)
         {
             using var memoryStream = new MemoryStream();
-            image.SaveAsBmp(memoryStream);
-            memoryStream.Position = 0;
-            return new SystemBitmap(memoryStream);
+            image.SaveAsPng(memoryStream);
+            return Cv2.ImDecode(memoryStream.ToArray(), ImreadModes.Color);
         }
-        
-        public static ImageSharpImage ToImageSharp(this SystemBitmap bitmap)
+
+        public static ImageSharpImage ToImageSharp(this Mat mat)
         {
-            using var memoryStream = new MemoryStream();
-            bitmap.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Png);
-            memoryStream.Position = 0;
-            return ImageSharpImage.Load<Rgba32>(memoryStream);
+            Cv2.ImEncode(".png", mat, out var pngBytes);
+            return Image.Load<Rgba32>(pngBytes);
         }
     }
 }

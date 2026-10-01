@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
@@ -36,6 +37,7 @@ using var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<IFeatureExtractionService, FeatureExtractionService>();
         services.AddScoped<IEcgBaselineService, EcgBaselineService>();
         services.AddScoped<IEcgVisualizerService, EcgVisualizerService>();
+        services.AddScoped<IHistogramVisualizerService, HistogramVisualizerService>();
         services.AddTransient<DataGenerationTask>();
     })
     .Build();
@@ -110,6 +112,12 @@ public class DataGenerationTask
         csvBuilder.AppendLine(string.Join(",", headers));
         // string csvHeaderLine = string.Join(",", headers);
         
+        // Датасет містить побайтово однакові копії (напр. MI(n) == MI(n+30)).
+        // Пропускаємо їх, щоб одна картинка не потрапила і в train, і в test (data leakage).
+        // Ключ — SHA-256 файлу, значення — перший файл з таким хешем.
+        var seenHashes = new Dictionary<string, string>();
+        int skippedDuplicates = 0;
+
         // --- ОБРОБКА ДАНИХ ТА ЗАПИС В ОДИН ФАЙЛ ---
         foreach (var directoryEntry in inputDirectoriesSection.GetChildren())
         {
@@ -134,9 +142,20 @@ public class DataGenerationTask
             {
                 try
                 {
+                    var fileBytes = await File.ReadAllBytesAsync(filePath);
+                    var hash = Convert.ToHexString(SHA256.HashData(fileBytes));
+
+                    if (!seenHashes.TryAdd(hash, filePath))
+                    {
+                        skippedDuplicates++;
+                        _logger.LogInformation("   Дублікат пропущено: {File} (= {Original})",
+                            Path.GetFileName(filePath), Path.GetFileName(seenHashes[hash]));
+                        continue;
+                    }
+
                     _logger.LogInformation("   Обробка файлу: {File}", Path.GetFileName(filePath));
 
-                    using var image = await Image.LoadAsync<Rgba32>(filePath);
+                    using var image = Image.Load<Rgba32>(fileBytes);
                     var preprocessingResult = await _preprocessor.PreprocessAsync(image);
 
                     using (preprocessingResult.FullCleanImage)
@@ -182,6 +201,8 @@ public class DataGenerationTask
             // _logger.LogInformation(">>> Обробку класу {Diagnosis} завершено. Файл збережено: {Path}", diagnosis, outputCsvPath);
         }
         await File.WriteAllTextAsync(outputCsvPath, csvBuilder.ToString());
+        _logger.LogInformation("--- Унікальних зображень: {Unique}, пропущено дублікатів: {Skipped}",
+            seenHashes.Count, skippedDuplicates);
         _logger.LogInformation("--- Генерацію об'єднаного датасету завершено. Файл збережено: {Path}", outputCsvPath);
     }
 }
