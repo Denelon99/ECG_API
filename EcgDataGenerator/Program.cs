@@ -37,7 +37,6 @@ using var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<IFeatureExtractionService, FeatureExtractionService>();
         services.AddScoped<IEcgBaselineService, EcgBaselineService>();
         services.AddScoped<IEcgVisualizerService, EcgVisualizerService>();
-        services.AddScoped<IHistogramVisualizerService, HistogramVisualizerService>();
         services.AddTransient<DataGenerationTask>();
     })
     .Build();

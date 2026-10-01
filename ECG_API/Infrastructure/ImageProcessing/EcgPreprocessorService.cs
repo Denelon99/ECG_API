@@ -1,4 +1,4 @@
-using ECG_API.Core.Services;
+﻿using ECG_API.Core.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -13,7 +13,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
         IEcgArtifactRemoverService artifactRemoverService,
         IEcgSignalConnectorService signalConnectorService,
         IImageStorageService imageStorageService,
-        IHistogramVisualizerService histogramVisualizerService,
         IEcgStripSplitterService stripSplitterService) : IEcgPreprocessorService
     {
         public async Task<PreprocessingResult> PreprocessAsync(Image<Rgba32> originalImage)
@@ -26,8 +25,6 @@ namespace ECG_API.Infrastructure.ImageProcessing
             
             using var signalWithBackground = new Image<Rgba32>(isolatedSignal.Width, isolatedSignal.Height, Color.White);
             signalWithBackground.Mutate(ctx => ctx.DrawImage(isolatedSignal, 1f));
-            
-            using var histogramImage = histogramVisualizerService.CreateVerticalProjectionHistogram(signalWithBackground);
             
             using var imageWithoutGainLines = pulseRemoverService.RemovePulse(signalWithBackground);
             using var artifactsRemoved = artifactRemoverService.RemoveArtifacts(imageWithoutGainLines);
