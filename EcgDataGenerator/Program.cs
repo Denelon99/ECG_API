@@ -1,6 +1,4 @@
 ﻿using ECG_API.Core.Services;
-using ECG_API.Infrastructure.ImageProcessing;
-using ECG_API.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -8,6 +6,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System.Security.Cryptography;
 using System.Text;
+using ECG_API.Infrastructure.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Configuration; 
@@ -22,21 +21,8 @@ using var host = Host.CreateDefaultBuilder(args)
         // --- КІНЕЦЬ ЗМІНИ ---
     }).ConfigureServices((context, services) =>
     {
-        services.AddLogging(configure => configure.AddConsole());
+        services.AddEcgProcessing();
         services.AddSingleton<IWebHostEnvironment, MockWebHostEnvironment>();
-        services.AddScoped<IGainLineDetectorService, GainLineDetectorService>();
-        services.AddScoped<IEcgWorkingAreaService, EcgWorkingAreaService>();
-        services.AddScoped<IEcgSignalIsolationService, EcgSignalIsolationService>();
-        services.AddScoped<ICalibrationPulseRemoverService, CalibrationPulseRemoverService>();
-        services.AddScoped<IEcgArtifactRemoverService, EcgArtifactRemoverService>();
-        services.AddScoped<IEcgSignalConnectorService, EcgSignalConnectorService>();
-        services.AddScoped<IEcgStripSplitterService, EcgStripSplitterService>();
-        services.AddScoped<IImageStorageService, ImageStorageService>();
-        services.AddScoped<IFeatureCalculatorService, FeatureCalculatorService>();
-        services.AddScoped<IEcgPreprocessorService, EcgPreprocessorService>();
-        services.AddScoped<IFeatureExtractionService, FeatureExtractionService>();
-        services.AddScoped<IEcgBaselineService, EcgBaselineService>();
-        services.AddScoped<IEcgVisualizerService, EcgVisualizerService>();
         services.AddTransient<DataGenerationTask>();
     })
     .Build();
