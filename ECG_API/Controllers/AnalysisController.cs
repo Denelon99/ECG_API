@@ -4,6 +4,8 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using ECG_API.Core.Services;
 using ECG_API.Core.MLModels;
+using ECG_API.Core.Models;
+using ECG_API.Infrastructure.Persistence;
 
 namespace ECG_API.Controllers
 {
@@ -24,6 +26,7 @@ namespace ECG_API.Controllers
         private readonly IEcgVisualizerService _visualizerService;
         private readonly IEcgBaselineService _baselineService;
         private readonly IImageStorageService _imageStorageService;
+        private readonly EcgDbContext _dbContext;
 
         public AnalysisController(
             ILogger<AnalysisController> logger, 
@@ -32,7 +35,8 @@ namespace ECG_API.Controllers
             IPredictionService predictionService,
             IEcgVisualizerService visualizerService,
             IEcgBaselineService baselineService,
-            IImageStorageService imageStorageService)
+            IImageStorageService imageStorageService,
+            EcgDbContext dbContext)
         {
             _logger = logger;
             _preprocessorService = preprocessorService;
@@ -41,6 +45,7 @@ namespace ECG_API.Controllers
             _visualizerService = visualizerService;
             _baselineService = baselineService;
             _imageStorageService = imageStorageService;
+            _dbContext =  dbContext;
         }
 
         [HttpPost("analyze")]
@@ -70,12 +75,23 @@ namespace ECG_API.Controllers
                     var modelInput = new ModelInput { Features = features };
                     var prediction = _predictionService.Predict(modelInput);
                     string predictedDiagnosis = prediction.PredictedDiagnosis;
-
+                    
                     using var fullVisualImage = _visualizerService.CreateFullVisualisation(preprocessingResult);
                     
-                    await _imageStorageService.SaveImageAsync(fullVisualImage, 
+                     string resultPath = await _imageStorageService.SaveImageAsync(fullVisualImage, 
                         $"full_result_{DateTime.Now:yyyyMMdd_HHmmssfff}", "results");
-
+                     
+                    var record = new AnalysisRecord
+                    {
+                        OriginalFileName = request.ImageFile.FileName,
+                        PredictedDiagnosis = predictedDiagnosis,
+                        Confidence = prediction.Score.Max(),
+                        CreatedAtUtc = DateTime.UtcNow,
+                        ResultImageFileName = Path.GetFileName(resultPath)
+                    };
+                    _dbContext.AnalysisRecords.Add(record);
+                    await _dbContext.SaveChangesAsync();
+                    
                     using var ms = new MemoryStream();
                     await fullVisualImage.SaveAsPngAsync(ms);
                     byte[] visualizationBytes = ms.ToArray();

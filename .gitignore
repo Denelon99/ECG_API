@@ -45,3 +45,6 @@ ProcessedImages/
 # де б вони не знаходились.
 *.zip
 *.csv
+*.db
+*.db-shm
+*.db-wal
