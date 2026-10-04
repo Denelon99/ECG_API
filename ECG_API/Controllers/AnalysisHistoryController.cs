@@ -1,10 +1,13 @@
 using ECG_API.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ECG_API.Infrastructure.Extensions;
 
 namespace ECG_API.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/analysis/history")]
 public class AnalysisHistoryController : ControllerBase
 {
@@ -18,7 +21,9 @@ public class AnalysisHistoryController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetHistory()
     {
-        var records = await _dbContext.AnalysisRecords.OrderByDescending(r => r.CreatedAtUtc).ToListAsync();
+        var userId = User.GetUserId();
+        var records = await _dbContext.AnalysisRecords.Where(r => r.UserId == userId)
+            .OrderByDescending(r => r.CreatedAtUtc).ToListAsync();
         return Ok(records);
     }
 }

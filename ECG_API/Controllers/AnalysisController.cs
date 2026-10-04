@@ -6,6 +6,8 @@ using ECG_API.Core.Services;
 using ECG_API.Core.MLModels;
 using ECG_API.Core.Models;
 using ECG_API.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
+using ECG_API.Infrastructure.Extensions;
 
 namespace ECG_API.Controllers
 {
@@ -16,6 +18,7 @@ namespace ECG_API.Controllers
     }
     
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class AnalysisController : ControllerBase
     {
@@ -51,6 +54,7 @@ namespace ECG_API.Controllers
         [HttpPost("analyze")]
         public async Task<IActionResult> AnalyzeImage([FromForm] AnalyzeImageRequest request)
         {
+            var userId = User.GetUserId();
             List<Image<Rgba32>>? cleanStrips = null;
             try
             {
@@ -87,7 +91,8 @@ namespace ECG_API.Controllers
                         PredictedDiagnosis = predictedDiagnosis,
                         Confidence = prediction.Score.Max(),
                         CreatedAtUtc = DateTime.UtcNow,
-                        ResultImageFileName = Path.GetFileName(resultPath)
+                        ResultImageFileName = Path.GetFileName(resultPath),
+                        UserId = userId
                     };
                     _dbContext.AnalysisRecords.Add(record);
                     await _dbContext.SaveChangesAsync();
