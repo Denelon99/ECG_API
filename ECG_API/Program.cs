@@ -1,8 +1,11 @@
 using ECG_API.Core.Services;
 using ECG_API.Core.MLModels;
+using ECG_API.Core.Models;
+using ECG_API.Infrastructure.Auth;
 using ECG_API.Infrastructure.DependencyInjection;
 using ECG_API.Infrastructure.MachineLearning;
 using ECG_API.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.ML; 
 
@@ -18,6 +21,8 @@ builder.Services.AddPredictionEnginePool<ModelInput, ModelOutput>()
         watchForChanges: true
     );
 builder.Services.AddScoped<IPredictionService, PredictionService>();
+builder.Services.AddSingleton<ITokenService, JwtTokenService>();
+builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>(); 
 builder.Services.AddDbContext<EcgDbContext>(options => options.UseSqlite(builder.Configuration.GetConnectionString("EcgDb")));
 builder.Services.AddEndpointsApiExplorer(); 
 builder.Services.AddSwaggerGen();

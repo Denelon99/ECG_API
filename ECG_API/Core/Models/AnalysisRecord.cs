@@ -8,4 +8,5 @@ public class AnalysisRecord
     public required string PredictedDiagnosis { get; set; }
     public float Confidence { get; set; }
     public string? ResultImageFileName { get; set; }
+    public int UserId { get; set; }
 }
