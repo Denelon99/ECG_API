@@ -55,6 +55,7 @@ namespace ECG_API.Controllers
         public async Task<IActionResult> AnalyzeImage([FromForm] AnalyzeImageRequest request)
         {
             var userId = User.GetUserId();
+            var analysisId = Guid.NewGuid().ToString("N");
             List<Image<Rgba32>>? cleanStrips = null;
             try
             {
@@ -71,8 +72,11 @@ namespace ECG_API.Controllers
                         return StatusCode(500, "Помилка: не отримано жодної смуги після попередньої обробки.");
                     }
 
-                    await _imageStorageService.SaveImageAsync(preprocessingResult.FullCleanImage, 
-                        $"full_clean_{DateTime.Now:yyyyMMdd_HHmmssfff}", "full_results");
+                    await _imageStorageService.SaveImageAsync(preprocessingResult.FullCleanImage,
+                        $"{analysisId}_clean", Path.Combine(userId.ToString(), "full_results"));
+
+                    await _imageStorageService.SaveImageStripsAsync(cleanStrips, analysisId,
+                        Path.Combine(userId.ToString(), "strips"));
 
                     var features = _featureExtractionService.ExtractFeatures(cleanStrips);
 
@@ -82,8 +86,8 @@ namespace ECG_API.Controllers
                     
                     using var fullVisualImage = _visualizerService.CreateFullVisualisation(preprocessingResult);
                     
-                     string resultPath = await _imageStorageService.SaveImageAsync(fullVisualImage, 
-                        $"full_result_{DateTime.Now:yyyyMMdd_HHmmssfff}", "results");
+                     string resultPath = await _imageStorageService.SaveImageAsync(fullVisualImage,
+                        $"{analysisId}_result", Path.Combine(userId.ToString(), "results"));
                      
                     var record = new AnalysisRecord
                     {
