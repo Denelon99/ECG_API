@@ -48,3 +48,6 @@ ProcessedImages/
 *.db
 *.db-shm
 *.db-wal
+
+# Local dataset, features CSV and trained models (see README)
+/data/

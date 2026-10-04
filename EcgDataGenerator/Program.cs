@@ -17,6 +17,7 @@ using var host = Host.CreateDefaultBuilder(args)
         // --- ДОДАЄМО ЯВНЕ ЗАВАНТАЖЕННЯ ---
         config.SetBasePath(AppContext.BaseDirectory);
         config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+        config.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
         Console.WriteLine($"[DEBUG] Завантаження конфігурації з: {Path.Combine(AppContext.BaseDirectory, "appsettings.json")}");
         // --- КІНЕЦЬ ЗМІНИ ---
     }).ConfigureServices((context, services) =>
@@ -59,7 +60,6 @@ public class DataGenerationTask
     {
         _logger.LogInformation("--- Початок генерації датасетів ---");
         
-        // var outputDirectory = _config.GetValue<string>("Paths:OutputCsvDirectory"); 
         var outputCsvPath = _config.GetValue<string>("Paths:OutputCsvFile"); 
         var saveVisualizations = _config.GetValue<bool>("Paths:SaveVisualizations");
         var inputDirectoriesSection = _config.GetSection("Paths:InputDirectories");
@@ -69,7 +69,7 @@ public class DataGenerationTask
             // Більш детальна помилка
             if (string.IsNullOrEmpty(outputCsvPath))
             {
-                _logger.LogError("КРИТИЧНА ПОМИЛКА: Ключ 'Paths:OutputCsvDirectory' не знайдено або його значення порожнє в appsettings.json!");
+                _logger.LogError("КРИТИЧНА ПОМИЛКА: Ключ 'Paths:OutputCsvFile' не знайдено або його значення порожнє в appsettings.json!");
             }
             if (!inputDirectoriesSection.Exists())
             {
