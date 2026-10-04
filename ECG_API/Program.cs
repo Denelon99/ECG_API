@@ -1,3 +1,4 @@
+using System.Text;
 using ECG_API.Core.Services;
 using ECG_API.Core.MLModels;
 using ECG_API.Core.Models;
@@ -5,9 +6,11 @@ using ECG_API.Infrastructure.Auth;
 using ECG_API.Infrastructure.DependencyInjection;
 using ECG_API.Infrastructure.MachineLearning;
 using ECG_API.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.ML; 
+using Microsoft.Extensions.ML;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +27,24 @@ builder.Services.AddScoped<IPredictionService, PredictionService>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>(); 
 builder.Services.AddDbContext<EcgDbContext>(options => options.UseSqlite(builder.Configuration.GetConnectionString("EcgDb")));
+var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key не задано. Виконайте: dotnet user-secrets set \"Jwt:Key\" \"$(openssl rand -base64 48)\" --project ECG_API");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.MapInboundClaims = false;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = true,
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromSeconds(30),
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+    };
+});
 builder.Services.AddEndpointsApiExplorer(); 
 builder.Services.AddSwaggerGen();
 
@@ -41,6 +62,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 /*app.UseHttpsRedirection();*/
 
 app.MapControllers();
