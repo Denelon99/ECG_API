@@ -15,9 +15,9 @@ using var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((hostingContext, config) =>
     {
         // --- ДОДАЄМО ЯВНЕ ЗАВАНТАЖЕННЯ ---
-        config.SetBasePath(Directory.GetCurrentDirectory());
+        config.SetBasePath(AppContext.BaseDirectory);
         config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-        Console.WriteLine($"[DEBUG] Завантаження конфігурації з: {Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json")}");
+        Console.WriteLine($"[DEBUG] Завантаження конфігурації з: {Path.Combine(AppContext.BaseDirectory, "appsettings.json")}");
         // --- КІНЕЦЬ ЗМІНИ ---
     }).ConfigureServices((context, services) =>
     {
