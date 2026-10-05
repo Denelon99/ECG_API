@@ -115,7 +115,7 @@ namespace ECG_API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Критична помилка в контролері аналізу.");
-                return StatusCode(500, new { Error = "Внутрішня помилка сервера.", Details = ex.Message });
+                return StatusCode(500, new { Error = "Внутрішня помилка сервера."});
             }
             finally
             {

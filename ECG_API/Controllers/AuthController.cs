@@ -28,7 +28,7 @@ public class AuthController : ControllerBase
         var email = request.Email.Trim().ToLowerInvariant();
         if (await _dbContext.Users.AnyAsync(u => u.Email == email))
         {
-            return Conflict("HTTP 409");
+            return Conflict(new { error = "Email already registered." });
         }
         var user = new User {Email = email, CreatedAtUtc = DateTime.UtcNow};
         user.PasswordHash = _hasher.HashPassword(user, request.Password);
@@ -40,7 +40,7 @@ public class AuthController : ControllerBase
         }
         catch (DbUpdateException)
         {
-            return Conflict("HTTP 409");
+            return Conflict(new { error = "Email already registered." });
         }
         return StatusCode(StatusCodes.Status201Created);
     }
