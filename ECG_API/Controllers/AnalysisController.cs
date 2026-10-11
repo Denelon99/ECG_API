@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using ECG_API.Core.Services;
 using ECG_API.Core.MLModels;
@@ -22,6 +25,13 @@ namespace ECG_API.Controllers
     [Route("api/[controller]")]
     public class AnalysisController : ControllerBase
     {
+        // Декодуємо лише JPEG і PNG: менше коду, що розбирає файли користувача
+        // (TIFF/BigTIFF-advisory для ImageSharp 3.1.11 тоді недосяжні).
+        private static readonly DecoderOptions UploadDecoderOptions = new()
+        {
+            Configuration = new Configuration(new JpegConfigurationModule(), new PngConfigurationModule())
+        };
+
         private readonly ILogger<AnalysisController> _logger;
         private readonly IEcgPreprocessorService _preprocessorService;
         private readonly IFeatureExtractionService _featureExtractionService;
@@ -60,7 +70,7 @@ namespace ECG_API.Controllers
             try
             {
                 await using var imageStream = request.ImageFile.OpenReadStream();
-                using var originalImage = await Image.LoadAsync<Rgba32>(imageStream);
+                using var originalImage = await Image.LoadAsync<Rgba32>(UploadDecoderOptions, imageStream);
 
                 var preprocessingResult = await _preprocessorService.PreprocessAsync(originalImage);
                 cleanStrips = preprocessingResult.Strips;
@@ -111,6 +121,10 @@ namespace ECG_API.Controllers
 
                     return File(visualizationBytes, "image/png");
                 }
+            }
+            catch (ImageFormatException)
+            {
+                return BadRequest(new { Error = "Непідтримуваний або пошкоджений файл. Дозволено JPEG і PNG." });
             }
             catch (Exception ex)
             {
