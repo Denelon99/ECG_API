@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace ECG_API.Tests;
 
-public abstract class EcgApiFactory : WebApplicationFactory<Program>
+public class EcgApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"ecg-test-{Guid.NewGuid():N}.db");
     private const string TestKey = "itsomenewtestkeyforjswtunixtests";
