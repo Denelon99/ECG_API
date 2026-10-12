@@ -29,7 +29,9 @@ public class ImageStorageService(IWebHostEnvironment webHostEnvironment, ILogger
 
         return fullPath;
     }
-    public async Task<List<string>> SaveImageStripsAsync(List<Image<Rgba32>> images, string baseFileName, string? subfolder = null)
+
+    public async Task<List<string>> SaveImageStripsAsync(List<Image<Rgba32>> images, string baseFileName,
+        string? subfolder = null)
     {
         var savedFilePaths = new List<string>();
         if (images == null || images.Count == 0)
@@ -41,11 +43,27 @@ public class ImageStorageService(IWebHostEnvironment webHostEnvironment, ILogger
         for (int i = 0; i < images.Count; i++)
         {
             var fileName = $"{baseFileName}_strip_{i}";
-                
+
             var filePath = await SaveImageAsync(images[i], fileName, subfolder);
             savedFilePaths.Add(filePath);
         }
 
         return savedFilePaths;
     }
+
+    public void DeleteUserImage(int userId)
+    {
+        var userDirectory = Path.Combine(_baseStoragePath, userId.ToString());
+        if (!Directory.Exists(userDirectory))
+            return;
+        try
+        {
+            Directory.Delete(userDirectory, true);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Не вдалося видалити зображення користувача {UserId}", userId);
+        }
+    }
+
 }

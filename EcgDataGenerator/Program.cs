@@ -1,12 +1,12 @@
 ﻿using ECG_API.Core.Services;
-using ECG_API.Infrastructure.ImageProcessing;
-using ECG_API.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using System.Security.Cryptography;
 using System.Text;
+using ECG_API.Infrastructure.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Configuration; 
@@ -15,27 +15,15 @@ using var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((hostingContext, config) =>
     {
         // --- ДОДАЄМО ЯВНЕ ЗАВАНТАЖЕННЯ ---
-        config.SetBasePath(Directory.GetCurrentDirectory());
+        config.SetBasePath(AppContext.BaseDirectory);
         config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-        Console.WriteLine($"[DEBUG] Завантаження конфігурації з: {Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json")}");
+        config.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
+        Console.WriteLine($"[DEBUG] Завантаження конфігурації з: {Path.Combine(AppContext.BaseDirectory, "appsettings.json")}");
         // --- КІНЕЦЬ ЗМІНИ ---
     }).ConfigureServices((context, services) =>
     {
-        services.AddLogging(configure => configure.AddConsole());
+        services.AddEcgProcessing();
         services.AddSingleton<IWebHostEnvironment, MockWebHostEnvironment>();
-        services.AddScoped<IGainLineDetectorService, GainLineDetectorService>();
-        services.AddScoped<IEcgWorkingAreaService, EcgWorkingAreaService>();
-        services.AddScoped<IEcgSignalIsolationService, EcgSignalIsolationService>();
-        services.AddScoped<ICalibrationPulseRemoverService, CalibrationPulseRemoverService>();
-        services.AddScoped<IEcgArtifactRemoverService, EcgArtifactRemoverService>();
-        services.AddScoped<IEcgSignalConnectorService, EcgSignalConnectorService>();
-        services.AddScoped<IEcgStripSplitterService, EcgStripSplitterService>();
-        services.AddScoped<IImageStorageService, ImageStorageService>();
-        services.AddScoped<IFeatureCalculatorService, FeatureCalculatorService>();
-        services.AddScoped<IEcgPreprocessorService, EcgPreprocessorService>();
-        services.AddScoped<IFeatureExtractionService, FeatureExtractionService>();
-        services.AddScoped<IEcgBaselineService, EcgBaselineService>();
-        services.AddScoped<IEcgVisualizerService, EcgVisualizerService>();
         services.AddTransient<DataGenerationTask>();
     })
     .Build();
@@ -72,7 +60,6 @@ public class DataGenerationTask
     {
         _logger.LogInformation("--- Початок генерації датасетів ---");
         
-        // var outputDirectory = _config.GetValue<string>("Paths:OutputCsvDirectory"); 
         var outputCsvPath = _config.GetValue<string>("Paths:OutputCsvFile"); 
         var saveVisualizations = _config.GetValue<bool>("Paths:SaveVisualizations");
         var inputDirectoriesSection = _config.GetSection("Paths:InputDirectories");
@@ -82,7 +69,7 @@ public class DataGenerationTask
             // Більш детальна помилка
             if (string.IsNullOrEmpty(outputCsvPath))
             {
-                _logger.LogError("КРИТИЧНА ПОМИЛКА: Ключ 'Paths:OutputCsvDirectory' не знайдено або його значення порожнє в appsettings.json!");
+                _logger.LogError("КРИТИЧНА ПОМИЛКА: Ключ 'Paths:OutputCsvFile' не знайдено або його значення порожнє в appsettings.json!");
             }
             if (!inputDirectoriesSection.Exists())
             {
@@ -110,6 +97,12 @@ public class DataGenerationTask
         csvBuilder.AppendLine(string.Join(",", headers));
         // string csvHeaderLine = string.Join(",", headers);
         
+        // Датасет містить побайтово однакові копії (напр. MI(n) == MI(n+30)).
+        // Пропускаємо їх, щоб одна картинка не потрапила і в train, і в test (data leakage).
+        // Ключ — SHA-256 файлу, значення — перший файл з таким хешем.
+        var seenHashes = new Dictionary<string, string>();
+        int skippedDuplicates = 0;
+
         // --- ОБРОБКА ДАНИХ ТА ЗАПИС В ОДИН ФАЙЛ ---
         foreach (var directoryEntry in inputDirectoriesSection.GetChildren())
         {
@@ -134,9 +127,20 @@ public class DataGenerationTask
             {
                 try
                 {
+                    var fileBytes = await File.ReadAllBytesAsync(filePath);
+                    var hash = Convert.ToHexString(SHA256.HashData(fileBytes));
+
+                    if (!seenHashes.TryAdd(hash, filePath))
+                    {
+                        skippedDuplicates++;
+                        _logger.LogInformation("   Дублікат пропущено: {File} (= {Original})",
+                            Path.GetFileName(filePath), Path.GetFileName(seenHashes[hash]));
+                        continue;
+                    }
+
                     _logger.LogInformation("   Обробка файлу: {File}", Path.GetFileName(filePath));
 
-                    using var image = await Image.LoadAsync<Rgba32>(filePath);
+                    using var image = Image.Load<Rgba32>(fileBytes);
                     var preprocessingResult = await _preprocessor.PreprocessAsync(image);
 
                     using (preprocessingResult.FullCleanImage)
@@ -182,6 +186,8 @@ public class DataGenerationTask
             // _logger.LogInformation(">>> Обробку класу {Diagnosis} завершено. Файл збережено: {Path}", diagnosis, outputCsvPath);
         }
         await File.WriteAllTextAsync(outputCsvPath, csvBuilder.ToString());
+        _logger.LogInformation("--- Унікальних зображень: {Unique}, пропущено дублікатів: {Skipped}",
+            seenHashes.Count, skippedDuplicates);
         _logger.LogInformation("--- Генерацію об'єднаного датасету завершено. Файл збережено: {Path}", outputCsvPath);
     }
 }

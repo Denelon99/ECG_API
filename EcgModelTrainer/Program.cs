@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using Microsoft.Extensions.Configuration;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using ScottPlot;
@@ -14,29 +15,36 @@ public class EcgDataInput
 
 public class Program
 {
-    private static readonly string CombinedDatasetPath = @"D:\ECG_Dataset_Features\dataset_combined.csv";
-    private static readonly string ModelOutputPath = @"D:\ECG_Models\EcgClassifier.zip";
-
     public static void Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
         Console.WriteLine("--- Початок процесу навчання моделі ЕКГ ---");
 
-        Directory.CreateDirectory(Path.GetDirectoryName(ModelOutputPath)!);
+        // Шляхи беремо з appsettings.json поруч з .exe (bin/...), а не з поточної папки,
+        // тому програма працює незалежно від того, звідки її запустили.
+        // appsettings.Development.json (в .gitignore) — для локальних шляхів, перекриває appsettings.json.
+        var config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false)
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .Build();
+
+        var combinedDatasetPath = config["Paths:DatasetCsv"]
+            ?? throw new InvalidOperationException("Paths:DatasetCsv не задано в appsettings.json");
+        var outputDirectory = config["Paths:OutputDirectory"]
+            ?? throw new InvalidOperationException("Paths:OutputDirectory не задано в appsettings.json");
+        var modelOutputPath = Path.Combine(outputDirectory, "EcgClassifier.zip");
+
+        Directory.CreateDirectory(outputDirectory);
         var mlContext = new MLContext(seed: 1);
 
         // 1. Завантаження
-        Console.WriteLine($"[Крок 1/5] Завантаження датасету з: {CombinedDatasetPath}");
+        Console.WriteLine($"[Крок 1/5] Завантаження датасету з: {combinedDatasetPath}");
         var allData = mlContext.Data.LoadFromTextFile<EcgDataInput>(
-            CombinedDatasetPath, hasHeader: true, separatorChar: ',');
+            combinedDatasetPath, hasHeader: true, separatorChar: ',');
 
-        // 2. Розділення
-        Console.WriteLine("[Крок 2/5] Розділення даних...");
-        var split = mlContext.Data.TrainTestSplit(allData, testFraction: 0.2, seed: 1);
-        var trainDataFull = split.TrainSet;
-        var testData = split.TestSet;
-
-        // 3. Конвеєр
+        // 2. Конвеєр
+        Console.WriteLine("[Крок 2/5] Побудова конвеєра (MapValueToKey → LightGbm → MapKeyToValue)...");
         var pipeline = mlContext.Transforms.Conversion.MapValueToKey(
                 outputColumnName: "Label",
                 inputColumnName: "Diagnosis")
@@ -45,34 +53,86 @@ public class Program
                 featureColumnName: "Features"))
             .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
+        // 3. Основна оцінка — 5-fold cross-validation.
+        // Даних мало (~491 зображення, MI лише 30), тому один split 80/20 дає "лотерейну" оцінку.
+        // CV навчає модель 5 разів; кожне зображення рівно один раз потрапляє в test.
+        Console.WriteLine("[Крок 3/5] 5-fold cross-validation...");
+        EvaluateWithCrossValidation(mlContext, pipeline, allData, numberOfFolds: 5);
 
-        // 4. Основне навчання
-        Console.WriteLine("[Крок 4/5] Основне навчання моделі...");
-        var model = pipeline.Fit(trainDataFull);
-        Console.WriteLine("-> Навчання завершено.");
+        // 4. Старий спосіб (один split 80/20) — для порівняння з результатом у дипломі + криві навчання.
+        Console.WriteLine("\n[Крок 4/5] Оцінка на одному split 80/20 (для порівняння)...");
+        var split = mlContext.Data.TrainTestSplit(allData, testFraction: 0.2, seed: 1);
+        var splitModel = pipeline.Fit(split.TrainSet);
+        var splitMetrics = mlContext.MulticlassClassification.Evaluate(
+            splitModel.Transform(split.TestSet), "Label", "Score");
 
-        // 5. Оцінка
-        Console.WriteLine("[Крок 5/5] Оцінка якості...");
-        var predictions = model.Transform(testData);
-        var metrics = mlContext.MulticlassClassification.Evaluate(predictions, "Label", "Score");
+        Console.WriteLine($"Точність (Micro): {splitMetrics.MicroAccuracy:P2}");
+        Console.WriteLine($"Точність (Macro): {splitMetrics.MacroAccuracy:P2}");
+        Console.WriteLine(splitMetrics.ConfusionMatrix.GetFormattedConfusionTable());
 
-        Console.WriteLine($"\nТочність (Micro): {metrics.MicroAccuracy:P2}");
-        Console.WriteLine(metrics.ConfusionMatrix.GetFormattedConfusionTable());
-
-        // 6. Криві навчання
         Console.WriteLine("\n--- Побудова кривих навчання ---");
-        BuildLearningCurves(mlContext, pipeline, trainDataFull, testData);
+        BuildLearningCurves(mlContext, pipeline, split.TrainSet, split.TestSet, outputDirectory);
 
-        // 7. Збереження
-        mlContext.Model.Save(model, trainDataFull.Schema, ModelOutputPath);
-        Console.WriteLine("\n-> Модель збережено успішно.");
+        // 5. Фінальна модель. CV і split лише ОЦІНЮЮТЬ якість;
+        // модель для API вчимо на всіх даних — більше прикладів, особливо для малого класу MI.
+        Console.WriteLine("\n[Крок 5/5] Навчання фінальної моделі на всіх даних...");
+        var finalModel = pipeline.Fit(allData);
+        mlContext.Model.Save(finalModel, allData.Schema, modelOutputPath);
+        Console.WriteLine($"-> Модель збережено: {modelOutputPath}");
+    }
+
+    private class HoldOutPrediction
+    {
+        public string Diagnosis { get; set; } = string.Empty;
+        public string PredictedLabel { get; set; } = string.Empty;
+    }
+
+    private static void EvaluateWithCrossValidation(
+        MLContext mlContext,
+        IEstimator<ITransformer> pipeline,
+        IDataView data,
+        int numberOfFolds)
+    {
+        var cvResults = mlContext.MulticlassClassification.CrossValidate(
+            data, pipeline, numberOfFolds: numberOfFolds, labelColumnName: "Label", seed: 1);
+
+        foreach (var fold in cvResults)
+        {
+            Console.WriteLine($"  Fold {fold.Fold + 1}: Micro {fold.Metrics.MicroAccuracy:P2} | Macro {fold.Metrics.MacroAccuracy:P2}");
+        }
+
+        var micro = cvResults.Select(r => r.Metrics.MicroAccuracy).ToArray();
+        var macro = cvResults.Select(r => r.Metrics.MacroAccuracy).ToArray();
+        Console.WriteLine($"\nCV Micro: {micro.Average():P2} ± {StandardDeviation(micro):P2}");
+        Console.WriteLine($"CV Macro: {macro.Average():P2} ± {StandardDeviation(macro):P2}");
+
+        // Точність по класах (recall): кожне зображення було в test рівно один раз,
+        // тому об'єднуємо прогнози всіх folds і рахуємо по всьому датасету.
+        // Беремо рядкові назви класів, а не ключі: порядок ключів може відрізнятись між folds.
+        var allHoldOut = cvResults
+            .SelectMany(r => mlContext.Data.CreateEnumerable<HoldOutPrediction>(r.ScoredHoldOutSet, reuseRowObject: false))
+            .ToList();
+
+        Console.WriteLine("\nТочність по класах (усі folds разом):");
+        foreach (var group in allHoldOut.GroupBy(p => p.Diagnosis).OrderBy(g => g.Key))
+        {
+            int correct = group.Count(p => p.PredictedLabel == p.Diagnosis);
+            Console.WriteLine($"  {group.Key,-22} {correct,3}/{group.Count(),-3} = {(double)correct / group.Count():P2}");
+        }
+    }
+
+    private static double StandardDeviation(double[] values)
+    {
+        double mean = values.Average();
+        return Math.Sqrt(values.Sum(v => Math.Pow(v - mean, 2)) / values.Length);
     }
 
     private static void BuildLearningCurves(
     MLContext mlContext,
     IEstimator<ITransformer> pipeline,
     IDataView fullTrainData,
-    IDataView testData)
+    IDataView testData,
+    string outputDirectory)
 {
     var sizes = new[] { 0.1, 0.3, 0.5, 0.7, 1.0 };
     var trainResults = new List<double>();
@@ -121,7 +181,7 @@ public class Program
     }
 
     // Експорт у CSV
-    var csvPath = @"D:\ECG_Models\learning_curves.csv";
+    var csvPath = Path.Combine(outputDirectory, "learning_curves.csv");
     using (var writer = new StreamWriter(csvPath))
     {
         writer.WriteLine("Fraction,SampleSize,TrainAccuracy,TestAccuracy");
@@ -136,11 +196,11 @@ public class Program
     // Візуалізація
     if (trainResults.Count > 0)
     {
-        PlotLearningCurves(actualSizes, trainResults, testResults);
+        PlotLearningCurves(actualSizes, trainResults, testResults, outputDirectory);
     }
 }
 
-private static void PlotLearningCurves(List<int> sizes, List<double> trainAccuracies, List<double> testAccuracies)
+private static void PlotLearningCurves(List<int> sizes, List<double> trainAccuracies, List<double> testAccuracies, string outputDirectory)
 {
     var plt = new Plot();
     
@@ -199,7 +259,7 @@ private static void PlotLearningCurves(List<int> sizes, List<double> trainAccura
     plt.DataBackground.Color = ScottPlot.Color.FromHex("#f8f9fa");
     
     // Збереження
-    var outputPath = @"D:\ECG_Models\learning_curves.png";
+    var outputPath = Path.Combine(outputDirectory, "learning_curves.png");
     plt.SavePng(outputPath, 1200, 800);
     Console.WriteLine($"Графік збережено у: {outputPath}");
     

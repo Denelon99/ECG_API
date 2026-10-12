@@ -1,9 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using ECG_API.Core.Services;
 using ECG_API.Core.MLModels;
+using ECG_API.Core.Models;
+using ECG_API.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
+using ECG_API.Infrastructure.Extensions;
 
 namespace ECG_API.Controllers
 {
@@ -14,9 +21,17 @@ namespace ECG_API.Controllers
     }
     
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class AnalysisController : ControllerBase
     {
+        // Декодуємо лише JPEG і PNG: менше коду, що розбирає файли користувача
+        // (TIFF/BigTIFF-advisory для ImageSharp 3.1.11 тоді недосяжні).
+        private static readonly DecoderOptions UploadDecoderOptions = new()
+        {
+            Configuration = new Configuration(new JpegConfigurationModule(), new PngConfigurationModule())
+        };
+
         private readonly ILogger<AnalysisController> _logger;
         private readonly IEcgPreprocessorService _preprocessorService;
         private readonly IFeatureExtractionService _featureExtractionService;
@@ -24,6 +39,7 @@ namespace ECG_API.Controllers
         private readonly IEcgVisualizerService _visualizerService;
         private readonly IEcgBaselineService _baselineService;
         private readonly IImageStorageService _imageStorageService;
+        private readonly EcgDbContext _dbContext;
 
         public AnalysisController(
             ILogger<AnalysisController> logger, 
@@ -32,7 +48,8 @@ namespace ECG_API.Controllers
             IPredictionService predictionService,
             IEcgVisualizerService visualizerService,
             IEcgBaselineService baselineService,
-            IImageStorageService imageStorageService)
+            IImageStorageService imageStorageService,
+            EcgDbContext dbContext)
         {
             _logger = logger;
             _preprocessorService = preprocessorService;
@@ -41,16 +58,19 @@ namespace ECG_API.Controllers
             _visualizerService = visualizerService;
             _baselineService = baselineService;
             _imageStorageService = imageStorageService;
+            _dbContext =  dbContext;
         }
 
         [HttpPost("analyze")]
         public async Task<IActionResult> AnalyzeImage([FromForm] AnalyzeImageRequest request)
         {
+            var userId = User.GetUserId();
+            var analysisId = Guid.NewGuid().ToString("N");
             List<Image<Rgba32>>? cleanStrips = null;
             try
             {
                 await using var imageStream = request.ImageFile.OpenReadStream();
-                using var originalImage = await Image.LoadAsync<Rgba32>(imageStream);
+                using var originalImage = await Image.LoadAsync<Rgba32>(UploadDecoderOptions, imageStream);
 
                 var preprocessingResult = await _preprocessorService.PreprocessAsync(originalImage);
                 cleanStrips = preprocessingResult.Strips;
@@ -62,20 +82,35 @@ namespace ECG_API.Controllers
                         return StatusCode(500, "Помилка: не отримано жодної смуги після попередньої обробки.");
                     }
 
-                    await _imageStorageService.SaveImageAsync(preprocessingResult.FullCleanImage, 
-                        $"full_clean_{DateTime.Now:yyyyMMdd_HHmmssfff}", "full_results");
+                    await _imageStorageService.SaveImageAsync(preprocessingResult.FullCleanImage,
+                        $"{analysisId}_clean", Path.Combine(userId.ToString(), "full_results"));
+
+                    await _imageStorageService.SaveImageStripsAsync(cleanStrips, analysisId,
+                        Path.Combine(userId.ToString(), "strips"));
 
                     var features = _featureExtractionService.ExtractFeatures(cleanStrips);
 
                     var modelInput = new ModelInput { Features = features };
                     var prediction = _predictionService.Predict(modelInput);
                     string predictedDiagnosis = prediction.PredictedDiagnosis;
-
+                    
                     using var fullVisualImage = _visualizerService.CreateFullVisualisation(preprocessingResult);
                     
-                    await _imageStorageService.SaveImageAsync(fullVisualImage, 
-                        $"full_result_{DateTime.Now:yyyyMMdd_HHmmssfff}", "results");
-
+                     string resultPath = await _imageStorageService.SaveImageAsync(fullVisualImage,
+                        $"{analysisId}_result", Path.Combine(userId.ToString(), "results"));
+                     
+                    var record = new AnalysisRecord
+                    {
+                        OriginalFileName = request.ImageFile.FileName,
+                        PredictedDiagnosis = predictedDiagnosis,
+                        Confidence = prediction.Score.Max(),
+                        CreatedAtUtc = DateTime.UtcNow,
+                        ResultImageFileName = Path.GetFileName(resultPath),
+                        UserId = userId
+                    };
+                    _dbContext.AnalysisRecords.Add(record);
+                    await _dbContext.SaveChangesAsync();
+                    
                     using var ms = new MemoryStream();
                     await fullVisualImage.SaveAsPngAsync(ms);
                     byte[] visualizationBytes = ms.ToArray();
@@ -87,10 +122,14 @@ namespace ECG_API.Controllers
                     return File(visualizationBytes, "image/png");
                 }
             }
+            catch (ImageFormatException)
+            {
+                return BadRequest(new { Error = "Непідтримуваний або пошкоджений файл. Дозволено JPEG і PNG." });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Критична помилка в контролері аналізу.");
-                return StatusCode(500, new { Error = "Внутрішня помилка сервера.", Details = ex.Message });
+                return StatusCode(500, new { Error = "Внутрішня помилка сервера."});
             }
             finally
             {
