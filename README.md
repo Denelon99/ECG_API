@@ -2,7 +2,7 @@
 
 A .NET 9 Web API that takes a photo or scan of a 12-lead ECG printout, cleans it with computer vision, turns it into a 160-number feature vector and classifies it with an ML.NET LightGBM model into one of 4 classes: **Normal**, **Myocardial Infarction**, **Abnormal Heartbeat**, **History of MI**.
 
-Built as my master's thesis at Lviv Polytechnic National University (supervisor: Roman Melnyk), then reworked: runs on Linux, honest evaluation, analysis history in SQLite.
+Built as my master's thesis at Lviv Polytechnic National University (supervisor: Roman Melnyk), then reworked: runs on Linux, honest evaluation, JWT authentication with per-user analysis history in SQLite, unit + integration tests, Docker image.
 
 > ⚠️ This is a learning project, **not a medical device**. Do not use it for diagnosis.
 
@@ -15,31 +15,36 @@ Built as my master's thesis at Lviv Polytechnic National University (supervisor:
 5. **Split** the image into 4 horizontal strips.
 6. **Extract features**: for each strip find the baseline, split the strip into 20 fragments and measure the area above and below the baseline → 40 features per strip, **160** in total.
 7. **Classify** the vector with a LightGBM model (ML.NET).
-8. **Save** the result to SQLite and return a PNG visualization (baselines + areas) with the diagnosis in a response header.
+8. **Save** the result to SQLite (linked to the user) and return a PNG visualization (baselines + areas) with the diagnosis in a response header.
 
 ![Example result](docs/example-result.png)
 
 ## Tech stack
 
-| Area             | Tools                                       |
-| ---------------- | ------------------------------------------- |
-| API              | ASP.NET Core 9 Web API, Swagger             |
-| Computer vision  | OpenCvSharp 4.13, SixLabors.ImageSharp      |
-| Machine learning | ML.NET 4 (LightGBM), `PredictionEnginePool` |
-| Database         | EF Core 9 + SQLite, migrations              |
-| Charts           | ScottPlot (learning curves)                 |
-| Platform         | .NET 9, Linux (tested on Fedora)            |
+| Area             | Tools                                                  |
+| ---------------- | ------------------------------------------------------ |
+| API              | ASP.NET Core 9 Web API, Swagger                        |
+| Auth             | JWT Bearer (HS256), `PasswordHasher<T>`                |
+| Computer vision  | OpenCvSharp 4.13, SixLabors.ImageSharp                 |
+| Machine learning | ML.NET 4 (LightGBM), `PredictionEnginePool`            |
+| Database         | EF Core 9 + SQLite, migrations                         |
+| Tests            | xUnit, `WebApplicationFactory` (integration tests)     |
+| Container        | Docker / Podman, multi-stage build                     |
+| Charts           | ScottPlot (learning curves)                            |
+| Platform         | .NET 9, Linux (tested on Fedora)                       |
 
 ## Project structure
 
 ```
 ECG_API.sln
 ├── ECG_API/            # Web API + the whole image-processing pipeline
-│   ├── Controllers/    # /analyze and /history endpoints
+│   ├── Controllers/    # auth, analyze, history, account endpoints
 │   ├── Core/           # service interfaces, models, ML schema
-│   └── Infrastructure/ # OpenCV / ML.NET / EF Core / storage implementations
+│   └── Infrastructure/ # OpenCV / ML.NET / EF Core / JWT / storage implementations
+├── ECG_API.Tests/      # xUnit: unit tests + API integration tests
 ├── EcgDataGenerator/   # console app: image dataset → features CSV (reuses ECG_API services)
-└── EcgModelTrainer/    # console app: CSV → cross-validation → EcgClassifier.zip
+├── EcgModelTrainer/    # console app: CSV → cross-validation → EcgClassifier.zip
+└── Dockerfile          # API image
 ```
 
 The generator calls the same pipeline as the API (shared DI registration `AddEcgProcessing()`), so training features and runtime features are computed identically.
@@ -77,20 +82,80 @@ dotnet run --project EcgModelTrainer -c Release    # → data/models/EcgClassifi
 cp data/models/EcgClassifier.zip ECG_API/Core/MLModels/
 ```
 
-**4. Run the API**
+**4. Set the JWT signing key**
+
+The key is a secret, so it is not in `appsettings.json`. For local development store it in [user-secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) (kept outside the repo, loaded only in the `Development` environment):
+
+```bash
+dotnet user-secrets set "Jwt:Key" "$(openssl rand -base64 48)" --project ECG_API
+```
+
+The API refuses to start without a key.
+
+**5. Run the API**
 
 ```bash
 dotnet run --project ECG_API --launch-profile http
 ```
 
-Swagger UI: http://localhost:5209/swagger. The SQLite database (`ECG_API/ecg.db`) is created and migrated automatically on startup.
+Swagger UI: http://localhost:5209/swagger (log in, then use the **Authorize** button with the token). The SQLite database (`ECG_API/ecg.db`) is created and migrated automatically on startup.
+
+**6. Run the tests**
+
+```bash
+dotnet test ECG_API.sln
+```
+
+Unit tests cover JWT creation, user-id extraction from claims and the feature calculator. Integration tests start the real API in memory (`WebApplicationFactory`) with a temporary SQLite file and a test key, so they need neither the dataset nor user-secrets.
+
+## Run with Docker
+
+Build the image (works with `docker` too — replace `podman`):
+
+```bash
+podman build -t ecg-api .
+```
+
+Train the model first (steps 2–3), then run:
+
+```bash
+podman run -d --name ecg -p 5300:8080 \
+  -e Jwt__Key="$(openssl rand -base64 48)" \
+  -v ecg-db:/app/db \
+  -v ecg-images:/app/ProcessedImages \
+  -v ./ECG_API/Core/MLModels/EcgClassifier.zip:/app/Core/MLModels/EcgClassifier.zip:ro,z \
+  ecg-api
+```
+
+- The model is **mounted** read-only instead of being built into the image (training needs the 589 MB dataset).
+- The database and result images live in **named volumes**, so they survive container re-creation.
+- `Jwt__Key` is an environment variable (`__` = `:` in .NET config). A new random key on each run invalidates old tokens — pass a fixed key to keep them.
+- `:z` relabels the file for SELinux (Fedora); it is harmless elsewhere.
+- The container runs as a non-root user, in the `Production` environment, so Swagger UI is off — use `curl` on http://localhost:5300.
 
 ## API usage
 
-**Analyze an image** — `POST /api/analysis/analyze`, `multipart/form-data`, field `ImageFile`:
+Examples use `http://localhost:5209` (local run). All `/api/analysis/*` and `/api/account` endpoints require a JWT in the `Authorization: Bearer <token>` header.
+
+**Register and log in**
+
+```bash
+curl -s -H "Content-Type: application/json" \
+  -d '{"email":"a@test.com","password":"Passw0rd123"}' \
+  http://localhost:5209/api/auth/register          # 201 Created, 409 if the email exists
+
+TOKEN=$(curl -s -H "Content-Type: application/json" \
+  -d '{"email":"a@test.com","password":"Passw0rd123"}' \
+  http://localhost:5209/api/auth/login | jq -r .token)   # 401 on wrong email or password
+```
+
+The password must be at least 8 characters. The token is valid for 60 minutes.
+
+**Analyze an image** — `POST /api/analysis/analyze`, `multipart/form-data`, field `ImageFile` (JPEG or PNG; other formats → 400):
 
 ```bash
 curl -s -D - -o result.png \
+  -H "Authorization: Bearer $TOKEN" \
   -F "ImageFile=@data/dataset/Normal Person ECG Images (284x12=3408)/Normal(1).jpg" \
   http://localhost:5209/api/analysis/analyze
 ```
@@ -102,15 +167,41 @@ X-ECG-Predicted-Diagnosis: Normal
 X-ECG-Feature-Count: 160
 ```
 
-**History** — `GET /api/analysis/history`, newest first:
+**History** — `GET /api/analysis/history`, only the current user's analyses, newest first:
 
 ```bash
-curl -s http://localhost:5209/api/analysis/history
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:5209/api/analysis/history
 ```
 
 ```json
-[{"id":1,"createdAtUtc":"2026-10-03T16:28:37.9776994","originalFileName":"PMI(64).jpg","predictedDiagnosis":"HistoryOfMI","confidence":0.9935852,"resultImageFileName":"full_result_20261003_192837897.png"}]
+[{"id":1,"createdAtUtc":"2026-10-12T09:58:49.0437721","originalFileName":"PMI(64).jpg","predictedDiagnosis":"HistoryOfMI","confidence":0.9935852,"resultImageFileName":"180a125037cb4d448c04970b9be7480a_result.png","userId":1}]
 ```
+
+**Delete account** — `DELETE /api/account` removes the user, all their analyses and all their images → 204:
+
+```bash
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:5209/api/account
+```
+
+## Security
+
+I tested the API myself against common JWT and access-control attacks; all of them are rejected:
+
+| Check | Result |
+|---|---|
+| No token / tampered signature / `alg: none` / expired token | 401 |
+| User A reads user B's history (IDOR) | not possible — the user id comes from the token, not from the request |
+| User enumeration via login | identical 401 for unknown email and wrong password |
+| Guessing image file names | random GUID names in per-user folders |
+| Error details | 500 responses don't expose exception messages |
+
+Design choices: passwords are hashed with ASP.NET Core's `PasswordHasher` (PBKDF2); only HS256 is accepted; clock skew is 30 s instead of the default 5 min; the signing key is never in git.
+
+Known limitations / accepted risks:
+
+- **ImageSharp 3.1.11 has known advisories.** The fixes exist only in ImageSharp 4.x, which requires a commercial license key at build time (Release builds fail without one). Mitigation: uploads are decoded with **JPEG and PNG decoders only**, which makes the TIFF-related issues unreachable. One moderate issue (ICC profile parsing) may still be reachable through JPEG/PNG and is accepted for this learning project.
+- **JWTs are stateless:** after `DELETE /api/account` an already issued token stays valid until it expires (it just sees an empty history).
+- `createdAtUtc` is returned without the `Z` suffix (SQLite doesn't store `DateTimeKind`), so clients should treat it as UTC.
 
 ## Results & limitations
 
