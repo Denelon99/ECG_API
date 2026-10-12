@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+.git/
+data/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/ProcessedImages/
+**/*.zip
+**/appsettings.Development.json
