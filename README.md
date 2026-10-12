@@ -127,11 +127,10 @@ podman run -d --name ecg -p 5300:8080 \
   ecg-api
 ```
 
-- The model is **mounted** read-only instead of being built into the image (training needs the 589 MB dataset).
-- The database and result images live in **named volumes**, so they survive container re-creation.
-- `Jwt__Key` is an environment variable (`__` = `:` in .NET config). A new random key on each run invalidates old tokens — pass a fixed key to keep them.
-- `:z` relabels the file for SELinux (Fedora); it is harmless elsewhere.
-- The container runs as a non-root user, in the `Production` environment, so Swagger UI is off — use `curl` on http://localhost:5300.
+- Model → mounted read-only, not built into the image (training needs the 589 MB dataset).
+- DB + images → named volumes (survive `podman rm`).
+- `Jwt__Key` → env var (`__` = `:` in .NET config). New key per run = old tokens invalid.
+- Production environment → no Swagger, use `curl` on http://localhost:5300.
 
 ## API usage
 
@@ -185,23 +184,28 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:5209/api/ac
 
 ## Security
 
-I tested the API myself against common JWT and access-control attacks; all of them are rejected:
+As part of learning web security, I ran a small pentest on my own API:
 
-| Check | Result |
+| Attack | Result |
 |---|---|
 | No token / tampered signature / `alg: none` / expired token | 401 |
-| User A reads user B's history (IDOR) | not possible — the user id comes from the token, not from the request |
-| User enumeration via login | identical 401 for unknown email and wrong password |
+| IDOR: user A reads user B's history | blocked (user id comes from the token, not the request) |
+| User enumeration via login | same 401 for unknown email and wrong password |
 | Guessing image file names | random GUID names in per-user folders |
-| Error details | 500 responses don't expose exception messages |
+| Error details in responses | 500 without exception message (logged only) |
 
-Design choices: passwords are hashed with ASP.NET Core's `PasswordHasher` (PBKDF2); only HS256 is accepted; clock skew is 30 s instead of the default 5 min; the signing key is never in git.
+Design choices and why:
 
-Known limitations / accepted risks:
+- Passwords → `PasswordHasher` (PBKDF2, salted), never stored in plain text.
+- Only HS256 accepted (prevents `alg` confusion).
+- Clock skew 30 s instead of default 5 min (expired tokens die faster).
+- Signing key in user-secrets / env var, never in git.
 
-- **ImageSharp 3.1.11 has known advisories.** The fixes exist only in ImageSharp 4.x, which requires a commercial license key at build time (Release builds fail without one). Mitigation: uploads are decoded with **JPEG and PNG decoders only**, which makes the TIFF-related issues unreachable. One moderate issue (ICC profile parsing) may still be reachable through JPEG/PNG and is accepted for this learning project.
-- **JWTs are stateless:** after `DELETE /api/account` an already issued token stays valid until it expires (it just sees an empty history).
-- `createdAtUtc` is returned without the `Z` suffix (SQLite doesn't store `DateTimeKind`), so clients should treat it as UTC.
+Accepted risks:
+
+- ImageSharp 3.1.11 has known advisories. Fixed only in 4.x, which needs a license key at build time (Release build fails without it). Mitigation: uploads decoded with JPEG + PNG decoders only → TIFF issues unreachable. One moderate issue (ICC profile parsing) may still be reachable via JPEG/PNG.
+- JWT is stateless: after `DELETE /api/account` an old token works until it expires (sees empty history).
+- `createdAtUtc` has no `Z` suffix (SQLite loses `DateTimeKind`) → treat it as UTC.
 
 ## Results & limitations
 
